@@ -4,6 +4,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { Car, Footprints, Bike, X, Navigation, Loader2 } from 'lucide-react';
 
 // Red Pin Icon SVG Component
 const RedPin = () => (
@@ -33,8 +34,16 @@ export default function MapPage() {
         bearing: -20
     });
     const [popupInfo, setPopupInfo] = useState(null);
+    const [userLocation, setUserLocation] = useState(null);
+    const [routeData, setRouteData] = useState(null);
 
-    // Mock data with User Name and Plant Number
+    // Navigation State
+    const [navTarget, setNavTarget] = useState(null);
+    const [activeMode, setActiveMode] = useState('driving'); // driving, walking, cycling
+    const [routeStats, setRouteStats] = useState({ duration: 0, distance: 0 });
+    const [isLoading, setIsLoading] = useState(false);
+
+    // Mock data
     const pins = [
         { id: 1, lat: 37.7749, lng: -122.4194, userName: 'EcoWarrior', plantNumber: 'Tree #142', title: 'City Hall Garden', desc: 'Maintained by GreenLoop' },
         { id: 2, lat: 37.7760, lng: -122.4220, userName: 'EcoWarrior', plantNumber: 'Bush #089', title: 'Community Patch', desc: 'Pruned yesterday' },
@@ -48,15 +57,134 @@ export default function MapPage() {
     useEffect(() => {
         navigator.geolocation.getCurrentPosition(
             (pos) => {
+                const { latitude, longitude } = pos.coords;
+                setUserLocation({ latitude, longitude });
                 setViewState(prev => ({
                     ...prev,
-                    latitude: pos.coords.latitude,
-                    longitude: pos.coords.longitude
+                    latitude,
+                    longitude
                 }));
             },
             (err) => console.error(err)
         );
     }, []);
+
+    // Helper to calculate a Bezier curve simulating a projectile
+    const getProjectileArc = (start, end) => {
+        const points = [];
+        const steps = 50;
+        // Control point is interpolated
+        const midLat = (start.lat + end.lat) / 2;
+        const midLng = (start.lng + end.lng) / 2;
+
+        // Offset perpendicular to the line creates the curve (simple approximation)
+        const dx = end.lng - start.lng;
+        const dy = end.lat - start.lat;
+
+        // High curvature factor for pronounced arc
+        const curvatureFactor = 0.5;
+        // Perpendicular vector (-dy, dx)
+        const ctrlLng = midLng - dy * curvatureFactor;
+        const ctrlLat = midLat + dx * curvatureFactor;
+
+        for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
+            const invT = 1 - t;
+            // Quadratic Bezier: B(t) = (1-t)^2 * P0 + 2(1-t)t * P1 + t^2 * P2
+            const lng = (invT * invT * start.lng) + (2 * invT * t * ctrlLng) + (t * t * end.lng);
+            const lat = (invT * invT * start.lat) + (2 * invT * t * ctrlLat) + (t * t * end.lat);
+            points.push([lng, lat]);
+        }
+
+        return {
+            type: 'Feature',
+            properties: {},
+            geometry: {
+                type: 'LineString',
+                coordinates: points
+            }
+        };
+    };
+
+    const fetchDirections = async (destination, mode = 'driving') => {
+        if (!userLocation) {
+            alert("Please allow location access to get directions.");
+            return;
+        }
+
+        setIsLoading(true);
+        const startCoords = { lng: userLocation.longitude, lat: userLocation.latitude };
+        const endCoords = { lng: destination.lng, lat: destination.lat };
+
+        // 1. Generate Visual Projectile immediately (ignore OSRM geometry)
+        const arc = getProjectileArc(startCoords, endCoords);
+        setRouteData(arc);
+
+        const start = `${userLocation.longitude},${userLocation.latitude}`;
+        const end = `${destination.lng},${destination.lat}`;
+
+        try {
+            // Map modes to OSRM services
+            const profileMap = {
+                driving: 'driving',
+                walking: 'walking',
+                cycling: 'bike' // OSRM uses 'bike' not 'cycling'
+            };
+            const profile = profileMap[mode];
+
+            // 2. Fetch Real Data for Stats Only
+            const response = await fetch(
+                `https://router.project-osrm.org/route/v1/${profile}/${start};${end}?overview=false` // No geometry needed
+            );
+            const data = await response.json();
+
+            if (data.routes && data.routes.length > 0) {
+                const route = data.routes[0];
+                setRouteStats({
+                    duration: Math.round(route.duration / 60), // seconds to minutes
+                    distance: (route.distance / 1000).toFixed(1) // meters to km
+                });
+            } else {
+                // Keep the visual arc even if OSRM fails to find a street route
+                setRouteStats({ duration: 0, distance: 0 });
+            }
+        } catch (error) {
+            console.error("Error fetching directions:", error);
+            // Don't alert, fail silently visually
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Handler when user clicks "Get Directions" in popup (opens panel)
+    const openNavigationPanel = (pin) => {
+        setNavTarget(pin);
+        setPopupInfo(null); // Close popup
+        setActiveMode('driving'); // Default mode
+        fetchDirections(pin, 'driving'); // Fetch default route
+    };
+
+    // Handler to launch external Google Maps integration
+    const launchExternalNavigation = () => {
+        if (!navTarget) return;
+        const url = `https://www.google.com/maps/dir/?api=1&destination=${navTarget.lat},${navTarget.lng}`;
+        window.open(url, '_blank');
+    };
+
+    // Handler when switching modes tab
+    const switchMode = (mode) => {
+        setActiveMode(mode);
+        if (navTarget) {
+            fetchDirections(navTarget, mode);
+        }
+    };
+
+    // Close navigation
+    const endNavigation = () => {
+        setNavTarget(null);
+        setRouteData(null);
+        setRouteStats({ duration: 0, distance: 0 });
+    };
 
     const buildingLayer = {
         id: '3d-buildings',
@@ -65,7 +193,7 @@ export default function MapPage() {
         type: 'fill-extrusion',
         minzoom: 15,
         paint: {
-            'fill-extrusion-color': '#e5e7eb', // lighter gray
+            'fill-extrusion-color': '#e5e7eb',
             'fill-extrusion-height': [
                 'interpolate', ['linear'], ['zoom'],
                 15, 0,
@@ -77,6 +205,21 @@ export default function MapPage() {
                 15.05, ['get', 'render_min_height']
             ],
             'fill-extrusion-opacity': 0.8
+        }
+    };
+
+    const routeLayer = {
+        id: 'route',
+        type: 'line',
+        layout: {
+            'line-join': 'round',
+            'line-cap': 'round'
+        },
+        paint: {
+            'line-color': '#4285F4', // Google Blue per user request
+            'line-width': 6,          // Thicker per user request
+            'line-opacity': 0.9,
+            'line-dasharray': [1, 2]  // Tighter dash for "tech" feel
         }
     };
 
@@ -105,6 +248,14 @@ export default function MapPage() {
                     <GeolocateControl position="top-right" />
                     <NavigationControl position="top-right" />
 
+                    {/* Route Layer */}
+                    {routeData && (
+                        <Source type="geojson" data={routeData}>
+                            <Layer {...routeLayer} />
+                        </Source>
+                    )}
+
+                    {/* 3D Buildings Layer */}
                     <Layer {...buildingLayer} />
 
                     {myPins.map(pin => (
@@ -119,13 +270,11 @@ export default function MapPage() {
                             }}
                         >
                             <div className="group relative flex flex-col items-center cursor-pointer hover:z-50">
-                                {/* Persistent Callout for Augmented Feel */}
+                                {/* Persistent Callout */}
                                 <div className="mb-1 bg-white/95 text-xs font-semibold px-2 py-1 rounded shadow-md border border-border whitespace-nowrap transform transition-all group-hover:scale-110">
                                     <span className="text-primary block">{pin.userName}</span>
                                     <span className="text-muted-foreground">{pin.plantNumber}</span>
                                 </div>
-
-                                {/* Red Pin Icon */}
                                 <RedPin />
                             </div>
                         </Marker>
@@ -143,30 +292,96 @@ export default function MapPage() {
                                 <strong className="block text-lg font-bold">{popupInfo.title}</strong>
                                 <div className="text-sm font-medium text-emerald-600 mb-1">{popupInfo.plantNumber}</div>
                                 <p className="text-sm text-gray-600">{popupInfo.desc}</p>
-                                <div className="mt-2 text-xs text-muted-foreground border-t pt-2">
-                                    Planted by {popupInfo.userName}
-                                </div>
+                                <Button
+                                    className="w-full mt-3 h-8 text-xs"
+                                    size="sm"
+                                    onClick={() => openNavigationPanel(popupInfo)}
+                                >
+                                    Get Directions <Navigation size={12} className="ml-1" />
+                                </Button>
                             </div>
                         </Popup>
                     )}
                 </Map>
 
-                {/* Floating Controls Overlay */}
-                <div className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur p-4 rounded-lg shadow-lg border border-border">
-                    <h3 className="font-semibold mb-2">Filters</h3>
-                    <div className="flex flex-col gap-2">
-                        <label className="flex items-center space-x-2 text-sm cursor-pointer">
-                            <input type="checkbox" defaultChecked className="accent-primary" />
-                            <span>My Plants</span>
-                        </label>
-                        {/* 
-                        <label className="flex items-center space-x-2 text-sm cursor-pointer opacity-50">
-                            <input type="checkbox" disabled className="accent-primary" />
-                            <span>Community (Hidden)</span>
-                        </label> 
-                        */}
+                {/* Floating Navigation Controls Overlay */}
+                {navTarget ? (
+                    <div className="absolute inset-x-4 bottom-8 z-20">
+                        <div className="bg-white/95 backdrop-blur-md p-4 rounded-xl shadow-2xl border border-border max-w-md mx-auto animate-in slide-in-from-bottom-5">
+
+                            {/* Header */}
+                            <div className="flex justify-between items-start mb-4">
+                                <div>
+                                    <h3 className="font-bold text-lg">{navTarget.title}</h3>
+                                    <p className="text-sm text-muted-foreground">{navTarget.plantNumber} • {navTarget.desc}</p>
+                                </div>
+                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={endNavigation}>
+                                    <X size={18} />
+                                </Button>
+                            </div>
+
+                            {/* Mode Toggles */}
+                            <div className="flex bg-muted/50 p-1 rounded-lg mb-4">
+                                <button
+                                    onClick={() => switchMode('driving')}
+                                    className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-medium rounded-md transition-all ${activeMode === 'driving' ? 'bg-white shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                                >
+                                    <Car size={16} /> Drive
+                                </button>
+                                <button
+                                    onClick={() => switchMode('walking')}
+                                    className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-medium rounded-md transition-all ${activeMode === 'walking' ? 'bg-white shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                                >
+                                    <Footprints size={16} /> Walk
+                                </button>
+                                <button
+                                    onClick={() => switchMode('cycling')}
+                                    className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-medium rounded-md transition-all ${activeMode === 'cycling' ? 'bg-white shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                                >
+                                    <Bike size={16} /> Bike
+                                </button>
+                            </div>
+
+                            {/* Stats & Actions */}
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    {isLoading ? (
+                                        <div className="flex items-center gap-2 text-sm text-muted-foreground animate-pulse">
+                                            <Loader2 size={16} className="animate-spin" /> Calculating route...
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="text-2xl font-bold text-emerald-600">
+                                                {routeStats.duration} <span className="text-sm font-normal text-muted-foreground">min</span>
+                                            </div>
+                                            <div className="text-sm text-muted-foreground">
+                                                {routeStats.distance} km
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                                <Button
+                                    onClick={launchExternalNavigation}
+                                    disabled={isLoading}
+                                    className="gap-2 px-6 shadow-lg hover:shadow-xl transition-all"
+                                >
+                                    <Navigation size={16} /> Start
+                                </Button>
+                            </div>
+                        </div>
                     </div>
-                </div>
+                ) : (
+                    /* Default Floating Filters */
+                    <div className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur p-4 rounded-lg shadow-lg border border-border">
+                        <h3 className="font-semibold mb-2">Filters</h3>
+                        <div className="flex flex-col gap-2">
+                            <label className="flex items-center space-x-2 text-sm cursor-pointer">
+                                <input type="checkbox" defaultChecked className="accent-primary" />
+                                <span>My Plants</span>
+                            </label>
+                        </div>
+                    </div>
+                )}
             </Card>
         </div>
     );
