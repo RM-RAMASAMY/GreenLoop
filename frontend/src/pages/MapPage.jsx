@@ -77,6 +77,14 @@ export default function MapPage() {
     const [routeStats, setRouteStats] = useState({ duration: 0, distance: 0 });
     const [isLoading, setIsLoading] = useState(false);
 
+    // Filter State
+    const [filters, setFilters] = useState({
+        tree: true,
+        flower: true,
+        bush: true,
+        fern: true
+    });
+
     // Mock data with types
     const pins = [
         { id: 1, lat: 37.7749, lng: -122.4194, userName: 'EcoWarrior', plantNumber: 'Tree #142', type: 'tree', title: 'City Hall Garden', desc: 'Maintained by GreenLoop' },
@@ -95,7 +103,7 @@ export default function MapPage() {
     ];
 
     const USER_NAME = 'EcoWarrior';
-    const myPins = pins.filter(pin => pin.userName === USER_NAME);
+    const myPins = pins.filter(pin => pin.userName === USER_NAME && filters[pin.type]);
 
     useEffect(() => {
         navigator.geolocation.getCurrentPosition(
@@ -423,14 +431,28 @@ export default function MapPage() {
                         </div>
                     </div>
                 ) : (
-                    /* Default Floating Filters */
-                    <div className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur p-4 rounded-lg shadow-lg border border-border">
-                        <h3 className="font-semibold mb-2">Filters</h3>
-                        <div className="flex flex-col gap-2">
-                            <label className="flex items-center space-x-2 text-sm cursor-pointer">
-                                <input type="checkbox" defaultChecked className="accent-primary" />
-                                <span>My Plants</span>
-                            </label>
+                    /* Dynamic Plant Filters */
+                    <div className="absolute top-4 left-4 z-10 bg-white/95 backdrop-blur-md p-4 rounded-xl shadow-lg border border-border min-w-[160px]">
+                        <h3 className="font-bold mb-3 text-sm uppercase tracking-wider text-muted-foreground">Filter Plants</h3>
+                        <div className="flex flex-col gap-3">
+                            {Object.keys(filters).map(type => (
+                                <label key={type} className="flex items-center space-x-3 cursor-pointer group">
+                                    <div className="relative flex items-center">
+                                        <input
+                                            type="checkbox"
+                                            checked={filters[type]}
+                                            onChange={() => setFilters(prev => ({ ...prev, [type]: !prev[type] }))}
+                                            className="peer h-5 w-5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 transition-all cursor-pointer"
+                                        />
+                                    </div>
+                                    <span className="text-sm font-medium capitalize text-gray-700 group-hover:text-emerald-700 transition-colors">
+                                        {type === 'tree' && '🌲 Tree'}
+                                        {type === 'flower' && '🌸 Flower'}
+                                        {type === 'bush' && '🌿 Bush'}
+                                        {type === 'fern' && '🍃 Fern'}
+                                    </span>
+                                </label>
+                            ))}
                         </div>
                     </div>
                 )}
