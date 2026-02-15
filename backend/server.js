@@ -146,22 +146,98 @@ const axios = require('axios');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+const { spawn } = require('child_process');
+
+// --- Helper: Get Embedding ---
+async function getEmbedding(text) {
+    try {
+        const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
+        const result = await model.embedContent(text);
+        return result.embedding.values;
+    } catch (e) {
+        console.error("Embedding Error:", e);
+        return null;
+    }
+}
+
+// --- Helper: Call Python Vector Bridge ---
+function callVectorBridge(command, data) {
+    return new Promise((resolve) => {
+        const pythonProcess = spawn('python', ['vector_bridge.py']); // Assumes running from backend/ dir
+        let output = '';
+
+        pythonProcess.stdout.on('data', (chunk) => { output += chunk; });
+        pythonProcess.stderr.on('data', (chunk) => { console.error(`[VectorBridge Log]: ${chunk}`); });
+
+        pythonProcess.on('close', (code) => {
+            try {
+                if (!output) resolve(null);
+                else resolve(JSON.parse(output));
+            } catch (e) {
+                console.error("Vector Bridge Parse Error:", e, "Output:", output);
+                resolve(null);
+            }
+        });
+
+        pythonProcess.stdin.write(JSON.stringify({ command, data }));
+        pythonProcess.stdin.end();
+    });
+}
+
 app.post('/api/chat', authMiddleware, async (req, res) => {
     const { message } = req.body;
 
     try {
+        // --- Context Retrieval (RAG-Lite) ---
+        const userPromise = User.findById(req.userId);
+        const actionsPromise = Action.find({ userId: req.userId }).sort({ createdAt: -1 }).limit(10);
+        const swapsPromise = Swap.find({ userId: req.userId }).sort({ createdAt: -1 }).limit(5);
+
+        // Vector Search (Async, non-blocking if fails)
+        const embedding = await getEmbedding(message);
+        let vectorHits = [];
+        if (embedding) {
+            const vectorResult = await callVectorBridge("search", { vector: embedding, top_k: 3 });
+            if (vectorResult && vectorResult.status === "success") {
+                vectorHits = vectorResult.hits || [];
+            }
+        }
+
+        const [user, actions, swaps] = await Promise.all([userPromise, actionsPromise, swapsPromise]);
+
+        // Build Context String
+        let context = `[USER CONTEXT]\nName: ${user.name}\nLevel: ${user.level}\nXP: ${user.totalXP}\n\n[RECENT ACTIONS]\n`;
+        actions.forEach(a => context += `- ${a.actionType}: ${JSON.stringify(a.details)} (${new Date(a.createdAt).toLocaleDateString()})\n`);
+
+        context += `\n[RECENT SWAPS]\n`;
+        swaps.forEach(s => context += `- Swapped ${s.original} for ${s.swap}\n`);
+
+        if (vectorHits.length > 0) {
+            context += `\n[RELEVANT MEMORIES (Vector DB)]\n`;
+            vectorHits.forEach(h => context += `- ${JSON.stringify(h.payload)}\n`);
+        }
+
+        console.log("Generated Context for Gemini:", context.substring(0, 200) + "...");
+
         // 1. Gemini Reasoning
-        // Using gemini-1.5-flash-latest as requested
+        // Using gemini-2.5-flash as requested
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const chat = model.startChat({
             history: [
                 {
                     role: "user",
-                    parts: [{ text: "You are 'The Green Man', a wise, friendly, and slightly mystical AI assistant focused on sustainability, nature, and eco-friendly living. Keep your answers concise, encouraging, and helpful. Do not use markdown formatting like asterisks or hash symbols, just plain text suitable for speech." }],
+                    parts: [{
+                        text: `You are 'The Green Man', a wise, friendly, and slightly mystical AI assistant focused on sustainability. 
+                    
+                    Here is the live data for the user you are talking to:
+                    ${context}
+                    
+                    Use this data to be personal and specific. If they ask about their stats, use the numbers provided.
+                    Keep answers concise and suitable for speech.` }],
                 },
                 {
                     role: "model",
-                    parts: [{ text: "Greetings, friend of the earth. I am The Green Man. How may I assist you in your journey towards a greener life today?" }],
+                    parts: [{ text: "Greetings, friend. I see your journey clearly. How may I assist you?" }],
                 },
             ],
         });
@@ -345,6 +421,25 @@ app.post('/api/action', authMiddleware, async (req, res) => {
             OBSERVE: 'Eyes on the environment! 👀',
         };
 
+        // --- ASYNC VECTOR UPSERT ---
+        (async () => {
+            try {
+                const textDescription = `${actionType}: ${details?.description || JSON.stringify(details)} at ${action.location ? JSON.stringify(action.location) : 'unknown location'}`;
+                const embedding = await getEmbedding(textDescription);
+                if (embedding) {
+                    await callVectorBridge("upsert", {
+                        id: action._id.toString(),
+                        vector: embedding,
+                        payload: { type: "ACTION", text: textDescription, date: new Date() }
+                    });
+                    console.log("[VectorDB] Action Upserted");
+                }
+            } catch (e) {
+                console.error("[VectorDB] Upsert Failed:", e);
+            }
+        })();
+        // ---------------------------
+
         res.json({
             success: true,
             message: messages[actionType] || 'Action logged!',
@@ -377,6 +472,25 @@ app.post('/api/swaps', authMiddleware, async (req, res) => {
         user.totalXP += swap.xp || 100;
         user.calculateLevel();
         await user.save();
+
+        // --- ASYNC VECTOR UPSERT ---
+        (async () => {
+            try {
+                const textDescription = `Swapped ${req.body.original} for ${req.body.swap}`;
+                const embedding = await getEmbedding(textDescription);
+                if (embedding) {
+                    await callVectorBridge("upsert", {
+                        id: swap._id.toString(),
+                        vector: embedding,
+                        payload: { type: "SWAP", text: textDescription, date: new Date() }
+                    });
+                    console.log("[VectorDB] Swap Upserted");
+                }
+            } catch (e) {
+                console.error("[VectorDB] Upsert Failed:", e);
+            }
+        })();
+        // ---------------------------
 
         res.json({ success: true, swap, newTotal: user.totalXP });
     } catch (err) {
