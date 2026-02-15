@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { Camera, Upload, CheckCircle, MapPin, Clock, Flame, TreePine, Bike, Recycle, Droplets, ShoppingBag, Sun, ChevronDown, X, Plus, Award } from 'lucide-react';
+import { Camera, Upload, CheckCircle, MapPin, Clock, Flame, TreePine, Bike, Recycle, Droplets, ShoppingBag, Sun, ChevronDown, X, Plus, Award, LocateFixed, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
@@ -39,16 +39,25 @@ export default function CameraPage() {
     const [selectedType, setSelectedType] = useState(null);
     const [description, setDescription] = useState('');
     const [submitted, setSubmitted] = useState(false);
-    const [location, setLocation] = useState(null);
+    const [location, setLocation] = useState({ lat: '', lng: '' });
+    const [locating, setLocating] = useState(false);
     const navigate = useNavigate();
 
-    // Get user location on mount
-    useEffect(() => {
+    // Fetch current GPS location on demand
+    const fetchCurrentLocation = () => {
+        setLocating(true);
         navigator.geolocation.getCurrentPosition(
-            (pos) => setLocation({ lat: pos.coords.latitude.toFixed(4), lng: pos.coords.longitude.toFixed(4) }),
-            () => setLocation(null)
+            (pos) => {
+                setLocation({ lat: pos.coords.latitude.toFixed(4), lng: pos.coords.longitude.toFixed(4) });
+                setLocating(false);
+            },
+            (err) => {
+                console.error('Geolocation error:', err);
+                alert('Could not get your location. Please enter it manually or allow location access.');
+                setLocating(false);
+            }
         );
-    }, []);
+    };
 
     const handleFileChange = (e) => {
         const selectedFile = e.target.files[0];
@@ -63,7 +72,7 @@ export default function CameraPage() {
         setLoading(true);
 
         try {
-            if (location) {
+            if (location.lat && location.lng) {
                 try {
                     await axios.post('http://localhost:3001/api/action', {
                         userId: 'user1',
@@ -86,6 +95,7 @@ export default function CameraPage() {
                 setPreview(null);
                 setSelectedType(null);
                 setDescription('');
+                setLocation({ lat: '', lng: '' });
                 setLoading(false);
             }, 2500);
         } catch (err) {
@@ -181,8 +191,8 @@ export default function CameraPage() {
                                             key={type.id}
                                             onClick={() => setSelectedType(type)}
                                             className={`p-4 rounded-xl border-2 text-left transition-all duration-200 hover:scale-[1.02] ${isSelected
-                                                    ? `${colors.bg} ${colors.border} ${colors.text} ring-2 ${colors.ring} shadow-md`
-                                                    : 'border-border bg-card hover:bg-muted/50'
+                                                ? `${colors.bg} ${colors.border} ${colors.text} ring-2 ${colors.ring} shadow-md`
+                                                : 'border-border bg-card hover:bg-muted/50'
                                                 }`}
                                         >
                                             <div className="flex items-center gap-2 mb-1">
@@ -216,13 +226,53 @@ export default function CameraPage() {
                                     />
                                 </div>
 
-                                {/* Location Tag */}
-                                {location && (
-                                    <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 px-4 py-2 rounded-lg">
-                                        <MapPin size={14} className="text-primary" />
-                                        <span>Location tagged: {location.lat}, {location.lng}</span>
+                                {/* Location Input */}
+                                <div>
+                                    <label className="text-sm font-bold text-muted-foreground uppercase tracking-wider mb-3 block">
+                                        Location <span className="text-xs font-normal normal-case">(optional)</span>
+                                    </label>
+                                    <div className="flex gap-3 items-end">
+                                        <div className="flex-1">
+                                            <label className="text-xs text-muted-foreground mb-1 block">Latitude</label>
+                                            <input
+                                                type="text"
+                                                value={location.lat}
+                                                onChange={(e) => setLocation(prev => ({ ...prev, lat: e.target.value }))}
+                                                placeholder="e.g. 37.7749"
+                                                className="w-full border border-input bg-background rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                                            />
+                                        </div>
+                                        <div className="flex-1">
+                                            <label className="text-xs text-muted-foreground mb-1 block">Longitude</label>
+                                            <input
+                                                type="text"
+                                                value={location.lng}
+                                                onChange={(e) => setLocation(prev => ({ ...prev, lng: e.target.value }))}
+                                                placeholder="e.g. -122.4194"
+                                                className="w-full border border-input bg-background rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                                            />
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            className="gap-1.5 h-9 flex-shrink-0"
+                                            onClick={fetchCurrentLocation}
+                                            disabled={locating}
+                                        >
+                                            {locating ? (
+                                                <><Loader2 size={14} className="animate-spin" /> Locating...</>
+                                            ) : (
+                                                <><LocateFixed size={14} /> Use My Location</>
+                                            )}
+                                        </Button>
                                     </div>
-                                )}
+                                    {location.lat && location.lng && (
+                                        <div className="flex items-center gap-1.5 mt-2 text-xs text-emerald-600">
+                                            <MapPin size={12} />
+                                            <span>Location set: {location.lat}, {location.lng}</span>
+                                        </div>
+                                    )}
+                                </div>
 
                                 {/* Step 3: Attach Photo (Optional) */}
                                 <div>
