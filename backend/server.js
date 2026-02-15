@@ -188,11 +188,29 @@ app.get('/api/user/me/stats', authMiddleware, async (req, res) => {
         const totalCO2 = swaps.reduce((sum, s) => sum + (s.co2Saved || 0), 0);
         const totalPlastic = swaps.reduce((sum, s) => sum + (s.plasticSaved || 0), 0);
 
-        const impactData = [
-            { name: 'Activities', value: allActions.length, color: '#10B981' },
-            { name: 'CO₂ Saved', value: Math.round(totalCO2 * 10), color: '#3B82F6' },
-            { name: 'Plastic', value: Math.round(totalPlastic / 10), color: '#F59E0B' },
-        ];
+        // Activity Distribution
+        const activityCounts = {};
+        allActions.forEach(a => {
+            const type = a.actionType || 'OTHER';
+            activityCounts[type] = (activityCounts[type] || 0) + 1;
+        });
+
+        const typeColors = {
+            'PLANT': '#10B981', // Emerald
+            'WALK': '#3B82F6',  // Blue
+            'REFILL': '#06B6D4', // Cyan
+            'COMPOST': '#F59E0B', // Amber
+            'SWAP': '#8B5CF6', // Purple
+            'CLEANUP': '#EC4899', // Pink
+            'OBSERVE': '#6366F1', // Indigo
+            'OTHER': '#6B7280' // Gray
+        };
+
+        const impactData = Object.keys(activityCounts).map(type => ({
+            name: type.charAt(0) + type.slice(1).toLowerCase(),
+            value: activityCounts[type],
+            color: typeColors[type] || '#9CA3AF'
+        }));
 
         res.json({
             name: user.name,

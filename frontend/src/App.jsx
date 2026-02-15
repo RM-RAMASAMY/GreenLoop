@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useSearchParams } from 'react-router-dom';
-import { LayoutDashboard, Map as MapIcon, Camera, Trophy, Leaf, User, Sprout, Newspaper, ArrowRightLeft, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, Map as MapIcon, Camera, Trophy, Leaf, User, Sprout, Newspaper, ArrowRightLeft, Settings, LogOut, Bot } from 'lucide-react';
 import HomePage from './pages/HomePage';
 import MapPage from './pages/MapPage';
+import GreenManPage from './pages/GreenManPage';
 import CameraPage from './pages/CameraPage';
 import LeaderboardPage from './pages/LeaderboardPage';
 import ProfilePage from './pages/ProfilePage';
@@ -32,6 +33,7 @@ function Sidebar({ user, onLogout }) {
             <div className="flex-1 py-6 px-4 space-y-1">
                 <NavItem to="/" icon={<LayoutDashboard size={20} />} label="Dashboard" active={isActive('/')} />
                 <NavItem to="/map" icon={<MapIcon size={20} />} label="Conservation Map" active={isActive('/map')} />
+                <NavItem to="/green-man" icon={<Bot size={20} />} label="The Green Man" active={isActive('/green-man')} />
                 <NavItem to="/camera" icon={<Camera size={20} />} label="Log Activity" active={isActive('/camera')} />
                 <NavItem to="/leaderboard" icon={<Trophy size={20} />} label="Leaderboard" active={isActive('/leaderboard')} />
                 <NavItem to="/nurseries" icon={<Sprout size={20} />} label="Plant Nurseries" active={isActive('/nurseries')} />
@@ -85,6 +87,7 @@ function NavItem({ to, icon, label, active }) {
 }
 
 // Inner app wrapped in Router to access URL params
+
 function AppContent({ user, token, onLogout }) {
     return (
         <div className="flex min-h-screen bg-background text-foreground">
@@ -93,6 +96,7 @@ function AppContent({ user, token, onLogout }) {
                 <Routes>
                     <Route path="/" element={<HomePage token={token} />} />
                     <Route path="/map" element={<MapPage token={token} />} />
+                    <Route path="/green-man" element={<GreenManPage token={token} />} />
                     <Route path="/camera" element={<CameraPage token={token} />} />
                     <Route path="/leaderboard" element={<LeaderboardPage token={token} />} />
                     <Route path="/profile" element={<ProfilePage token={token} user={user} />} />

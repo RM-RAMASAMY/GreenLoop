@@ -133,20 +133,35 @@ export default function HomePage({ token }) {
 
                 <Card className="col-span-3">
                     <CardHeader>
-                        <CardTitle>Impact Distribution</CardTitle>
+                        <CardTitle>Activity Distribution</CardTitle>
                     </CardHeader>
-                    <CardContent className="flex justify-center">
-                        <ResponsiveContainer width="100%" height={280}>
-                            <PieChart>
-                                <Pie data={stats.impactData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value">
-                                    {stats.impactData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={entry.color} />
-                                    ))}
-                                </Pie>
-                                <Tooltip />
-                                <Legend />
-                            </PieChart>
-                        </ResponsiveContainer>
+                    <CardContent className="flex justify-center items-center h-[280px]">
+                        {stats?.impactData && stats.impactData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie 
+                                        data={stats.impactData} 
+                                        cx="50%" 
+                                        cy="50%" 
+                                        innerRadius={60} 
+                                        outerRadius={80} 
+                                        paddingAngle={5} 
+                                        dataKey="value"
+                                    >
+                                        {stats.impactData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.color} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip />
+                                    <Legend iconType="circle" />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="text-center text-muted-foreground">
+                                <Leaf className="h-8 w-8 mx-auto mb-2 opacity-20" />
+                                <p className="text-sm">No activities logged yet</p>
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             </div>
