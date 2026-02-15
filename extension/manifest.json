@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "GreenLoop Eco-Shopper",
+  "version": "1.0",
+  "description": "Suggests eco-friendly alternatives while you shop.",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://www.amazon.com/*",
+    "*://www.walmart.com/*",
+    "http://localhost:3001/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.amazon.com/*",
+        "*://www.walmart.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content_styles.css"
+      ]
+    }
+  ]
+}
