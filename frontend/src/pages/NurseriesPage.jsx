@@ -1,126 +1,199 @@
-import React, { useState } from 'react';
-import { MapPin, Phone, Clock, Star, ExternalLink, Sprout, ArrowUpRight, Search } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { MapPin, Phone, Clock, Star, Sprout, Search, Loader2, ExternalLink, Navigation } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 
-const NURSERIES = [
-    {
-        id: 1,
-        name: 'Flora & Fauna Garden Center',
-        address: '1355 Market St, San Francisco, CA',
-        phone: '(415) 555-0142',
-        rating: 4.8,
-        reviews: 234,
-        hours: 'Open - Closes 7 PM',
-        distance: '0.3 mi',
-        specialties: ['Native Plants', 'Succulents', 'Organic Soil'],
-        image: 'https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?w=400&h=250&fit=crop',
-        featured: true,
-        description: 'Bay Area premier native plant nursery. Family-owned since 1998, specializing in drought-tolerant California natives.',
-        promo: '15% off for GreenLoop members'
-    },
-    {
-        id: 2,
-        name: 'Urban Roots Nursery',
-        address: '890 Valencia St, San Francisco, CA',
-        phone: '(415) 555-0198',
-        rating: 4.6,
-        reviews: 189,
-        hours: 'Open - Closes 6 PM',
-        distance: '0.8 mi',
-        specialties: ['Indoor Plants', 'Herbs', 'Planters'],
-        image: 'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=400&h=250&fit=crop',
-        featured: false,
-        description: 'Curated collection of indoor plants, perfect for apartments and urban living. Expert advice on plant care.',
-        promo: null
-    },
-    {
-        id: 3,
-        name: 'Bay Bloom Plant Shop',
-        address: '2100 Irving St, San Francisco, CA',
-        phone: '(415) 555-0256',
-        rating: 4.9,
-        reviews: 312,
-        hours: 'Open - Closes 8 PM',
-        distance: '1.2 mi',
-        specialties: ['Rare Plants', 'Bonsai', 'Workshops'],
-        image: 'https://images.unsplash.com/photo-1459411552884-841db9b3cc2a?w=400&h=250&fit=crop',
-        featured: true,
-        description: 'Rare and exotic plant specialists. Monthly workshops on bonsai, terrarium building, and plant propagation.',
-        promo: 'Free workshop with any purchase over $50'
-    },
-    {
-        id: 4,
-        name: 'Green Thumb Depot',
-        address: '550 Clement St, San Francisco, CA',
-        phone: '(415) 555-0311',
-        rating: 4.4,
-        reviews: 156,
-        hours: 'Open - Closes 6 PM',
-        distance: '1.5 mi',
-        specialties: ['Trees', 'Shrubs', 'Landscaping'],
-        image: 'https://images.unsplash.com/photo-1466692476868-aef1dfb1e735?w=400&h=250&fit=crop',
-        featured: false,
-        description: 'Full-service garden center with a wide selection of trees, shrubs, and landscaping supplies for every project.',
-        promo: null
-    },
-    {
-        id: 5,
-        name: 'Sunset Garden Nursery',
-        address: '3820 Judah St, San Francisco, CA',
-        phone: '(415) 555-0487',
-        rating: 4.7,
-        reviews: 278,
-        hours: 'Open - Closes 5 PM',
-        distance: '2.1 mi',
-        specialties: ['Flowers', 'Seasonal', 'Delivery'],
-        image: 'https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?w=400&h=250&fit=crop',
-        featured: false,
-        description: 'Beautiful seasonal flowers and arrangements. Same-day delivery available throughout San Francisco.',
-        promo: 'Free delivery on orders over $30'
-    },
-    {
-        id: 6,
-        name: 'EcoPlant Co-op',
-        address: '1200 Divisadero St, San Francisco, CA',
-        phone: '(415) 555-0523',
-        rating: 4.5,
-        reviews: 142,
-        hours: 'Open - Closes 7 PM',
-        distance: '0.9 mi',
-        specialties: ['Organic', 'Composting', 'Community'],
-        image: 'https://images.unsplash.com/photo-1491147334573-44cbb4602074?w=400&h=250&fit=crop',
-        featured: false,
-        description: 'Community-driven plant cooperative. All organic and sustainably sourced. Composting supplies and classes.',
-        promo: '10% off for first-time visitors'
-    }
-];
+// Calculate distance between two lat/lng pairs (Haversine formula)
+function getDistance(lat1, lon1, lat2, lon2) {
+    const R = 3958.8; // Earth radius in miles
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return (R * c).toFixed(1);
+}
 
-const StarRating = ({ rating }) => (
-    <div className="flex items-center gap-1">
-        {[1, 2, 3, 4, 5].map(star => (
-            <Star
-                key={star}
-                size={14}
-                className={star <= Math.floor(rating) ? 'text-amber-400 fill-amber-400' : 'text-gray-300'}
-            />
-        ))}
-        <span className="text-sm font-semibold ml-1">{rating}</span>
-        <span className="text-xs text-muted-foreground">({rating > 4.5 ? '200+' : '100+'} reviews)</span>
-    </div>
-);
+// Build a readable address from OSM tags
+function buildAddress(tags) {
+    const parts = [];
+    if (tags['addr:housenumber'] && tags['addr:street']) {
+        parts.push(`${tags['addr:housenumber']} ${tags['addr:street']}`);
+    } else if (tags['addr:street']) {
+        parts.push(tags['addr:street']);
+    }
+    if (tags['addr:city']) parts.push(tags['addr:city']);
+    if (tags['addr:state']) parts.push(tags['addr:state']);
+    return parts.length > 0 ? parts.join(', ') : null;
+}
 
 export default function NurseriesPage() {
+    const [nurseries, setNurseries] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [userLocation, setUserLocation] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [radius, setRadius] = useState(5000); // 5km default
 
-    const filteredNurseries = NURSERIES.filter(n =>
+    useEffect(() => {
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                setUserLocation(loc);
+                fetchNurseries(loc.lat, loc.lng);
+            },
+            (err) => {
+                console.error('Geolocation error:', err);
+                setError('Location access is required to find nearby nurseries. Please allow location access and refresh.');
+                setLoading(false);
+            }
+        );
+    }, []);
+
+    const fetchNurseries = async (lat, lng) => {
+        setLoading(true);
+        setError(null);
+
+        // Overpass QL query: find garden centres, nurseries, and florists nearby
+        const query = `
+            [out:json][timeout:15];
+            (
+                node["shop"="garden_centre"](around:${radius},${lat},${lng});
+                way["shop"="garden_centre"](around:${radius},${lat},${lng});
+                node["shop"="nursery"](around:${radius},${lat},${lng});
+                way["shop"="nursery"](around:${radius},${lat},${lng});
+                node["shop"="garden_furniture"](around:${radius},${lat},${lng});
+                node["landuse"="plant_nursery"](around:${radius},${lat},${lng});
+                way["landuse"="plant_nursery"](around:${radius},${lat},${lng});
+                node["shop"="florist"](around:${radius},${lat},${lng});
+                way["shop"="florist"](around:${radius},${lat},${lng});
+            );
+            out center body;
+        `;
+
+        try {
+            const response = await fetch('https://overpass-api.de/api/interpreter', {
+                method: 'POST',
+                body: `data=${encodeURIComponent(query)}`,
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            });
+
+            if (!response.ok) throw new Error('Overpass API request failed');
+
+            const data = await response.json();
+
+            const results = data.elements
+                .map(el => {
+                    const elLat = el.lat || el.center?.lat;
+                    const elLng = el.lon || el.center?.lon;
+                    if (!elLat || !elLng) return null;
+
+                    const tags = el.tags || {};
+                    return {
+                        id: el.id,
+                        name: tags.name || tags['name:en'] || 'Unnamed Plant Shop',
+                        address: buildAddress(tags) || `${elLat.toFixed(4)}, ${elLng.toFixed(4)}`,
+                        phone: tags.phone || tags['contact:phone'] || null,
+                        website: tags.website || tags['contact:website'] || null,
+                        hours: tags.opening_hours || null,
+                        lat: elLat,
+                        lng: elLng,
+                        distance: getDistance(lat, lng, elLat, elLng),
+                        type: tags.shop || tags.landuse || 'nursery',
+                        description: tags.description || null,
+                        wheelchair: tags.wheelchair || null,
+                    };
+                })
+                .filter(Boolean)
+                .sort((a, b) => parseFloat(a.distance) - parseFloat(b.distance));
+
+            setNurseries(results);
+
+            if (results.length === 0) {
+                setError('No nurseries found within the search radius. Try expanding the radius.');
+            }
+        } catch (err) {
+            console.error('Overpass API error:', err);
+            setError('Could not fetch nursery data. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const expandRadius = () => {
+        const newRadius = radius + 5000;
+        setRadius(newRadius);
+        if (userLocation) {
+            fetchNurseries(userLocation.lat, userLocation.lng);
+        }
+    };
+
+    const getTypeLabel = (type) => {
+        const labels = {
+            garden_centre: 'Garden Center',
+            nursery: 'Plant Nursery',
+            plant_nursery: 'Plant Nursery',
+            florist: 'Florist',
+            garden_furniture: 'Garden Supply',
+        };
+        return labels[type] || 'Plant Shop';
+    };
+
+    const getTypeColor = (type) => {
+        const colors = {
+            garden_centre: 'bg-emerald-100 text-emerald-800',
+            nursery: 'bg-green-100 text-green-800',
+            plant_nursery: 'bg-green-100 text-green-800',
+            florist: 'bg-pink-100 text-pink-800',
+            garden_furniture: 'bg-amber-100 text-amber-800',
+        };
+        return colors[type] || 'bg-gray-100 text-gray-800';
+    };
+
+    // Map store type to a beautiful plant image
+    const getPlantImage = (type, index) => {
+        const images = {
+            garden_centre: [
+                'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=400&h=300&fit=crop',
+                'https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?w=400&h=300&fit=crop',
+                'https://images.unsplash.com/photo-1466692476868-aef1dfb1e735?w=400&h=300&fit=crop',
+            ],
+            nursery: [
+                'https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?w=400&h=300&fit=crop',
+                'https://images.unsplash.com/photo-1459411552884-841db9b3cc2a?w=400&h=300&fit=crop',
+                'https://images.unsplash.com/photo-1491147334573-44cbb4602074?w=400&h=300&fit=crop',
+            ],
+            plant_nursery: [
+                'https://images.unsplash.com/photo-1509423350716-97f9360b4e09?w=400&h=300&fit=crop',
+                'https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=400&h=300&fit=crop',
+                'https://images.unsplash.com/photo-1463936575829-25148e1db1b8?w=400&h=300&fit=crop',
+            ],
+            florist: [
+                'https://images.unsplash.com/photo-1487530811176-3780de880c2d?w=400&h=300&fit=crop',
+                'https://images.unsplash.com/photo-1490750967868-88aa4f44baee?w=400&h=300&fit=crop',
+                'https://images.unsplash.com/photo-1455659817273-f96807779a8a?w=400&h=300&fit=crop',
+            ],
+            garden_furniture: [
+                'https://images.unsplash.com/photo-1558618666-fcd25c85f82e?w=400&h=300&fit=crop',
+                'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=400&h=300&fit=crop',
+            ],
+        };
+        const defaults = [
+            'https://images.unsplash.com/photo-1520412099551-62b6bafeb5bb?w=400&h=300&fit=crop',
+            'https://images.unsplash.com/photo-1501004318855-dc52f24e1998?w=400&h=300&fit=crop',
+            'https://images.unsplash.com/photo-1453904300235-0f2f60b15b5d?w=400&h=300&fit=crop',
+        ];
+        const pool = images[type] || defaults;
+        return pool[index % pool.length];
+    };
+
+    const filteredNurseries = nurseries.filter(n =>
         n.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        n.specialties.some(s => s.toLowerCase().includes(searchQuery.toLowerCase()))
+        n.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        getTypeLabel(n.type).toLowerCase().includes(searchQuery.toLowerCase())
     );
-
-    const featured = filteredNurseries.filter(n => n.featured);
-    const regular = filteredNurseries.filter(n => !n.featured);
 
     return (
         <div className="space-y-8">
@@ -130,129 +203,207 @@ export default function NurseriesPage() {
                     <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
                         <Sprout className="h-8 w-8 text-emerald-600" /> Plant Nurseries
                     </h1>
-                    <p className="text-muted-foreground">Find nurseries near you and grow your green impact.</p>
+                    <p className="text-muted-foreground">
+                        Real nurseries near your location, powered by OpenStreetMap.
+                    </p>
                 </div>
+                {userLocation && (
+                    <Badge variant="secondary" className="flex items-center gap-1 text-xs">
+                        <MapPin size={12} /> {userLocation.lat.toFixed(3)}, {userLocation.lng.toFixed(3)}
+                    </Badge>
+                )}
             </div>
 
-            {/* Search Bar */}
-            <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground h-5 w-5" />
-                <input
-                    type="text"
-                    placeholder="Search nurseries, specialties..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-12 pr-4 py-3 border border-input bg-card rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
-                />
+            {/* Search & Radius Controls */}
+            <div className="flex gap-3">
+                <div className="relative flex-1">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground h-5 w-5" />
+                    <input
+                        type="text"
+                        placeholder="Search nurseries by name or type..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full pl-12 pr-4 py-3 border border-input bg-card rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                    />
+                </div>
+                <Button
+                    variant="outline"
+                    onClick={expandRadius}
+                    className="whitespace-nowrap"
+                    disabled={loading}
+                >
+                    Expand Radius ({(radius / 1000).toFixed(0)} km)
+                </Button>
             </div>
 
-            {/* Featured Section */}
-            {featured.length > 0 && (
-                <div className="space-y-4">
-                    <h2 className="text-sm font-bold text-muted-foreground uppercase tracking-wider">⭐ Featured Partners</h2>
-                    <div className="grid gap-4 md:grid-cols-2">
-                        {featured.map(nursery => (
-                            <Card key={nursery.id} className="overflow-hidden border-emerald-200 hover:shadow-lg transition-shadow">
-                                <div className="relative h-40 overflow-hidden">
-                                    <img src={nursery.image} alt={nursery.name} className="w-full h-full object-cover" />
-                                    <div className="absolute top-3 left-3">
-                                        <Badge className="bg-emerald-600 text-white hover:bg-emerald-700 shadow-md">
-                                            GreenLoop Partner
-                                        </Badge>
-                                    </div>
-                                    <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm text-xs font-semibold px-2 py-1 rounded-full shadow">
-                                        {nursery.distance}
-                                    </div>
-                                </div>
-                                <CardContent className="p-5 space-y-3">
-                                    <div>
-                                        <h3 className="font-bold text-lg">{nursery.name}</h3>
-                                        <p className="text-sm text-muted-foreground mt-1">{nursery.description}</p>
-                                    </div>
-                                    <StarRating rating={nursery.rating} />
-                                    <div className="flex flex-wrap gap-2">
-                                        {nursery.specialties.map(spec => (
-                                            <Badge key={spec} variant="secondary" className="text-xs">{spec}</Badge>
-                                        ))}
-                                    </div>
-                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                        <MapPin size={14} /> {nursery.address}
-                                    </div>
-                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                        <Clock size={14} /> {nursery.hours}
-                                    </div>
-                                    {nursery.promo && (
-                                        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800 font-medium">
-                                            🎉 {nursery.promo}
-                                        </div>
-                                    )}
-                                    <div className="flex gap-2 pt-2">
-                                        <Button
-                                            className="flex-1 gap-2"
-                                            onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(nursery.address)}`, '_blank')}
-                                        >
-                                            <MapPin size={14} /> Directions
-                                        </Button>
-                                        <Button variant="outline" className="gap-2" onClick={() => window.open(`tel:${nursery.phone}`)}>
-                                            <Phone size={14} /> Call
-                                        </Button>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))}
-                    </div>
+            {/* Loading State */}
+            {loading && (
+                <Card>
+                    <CardContent className="p-12 flex flex-col items-center justify-center gap-4">
+                        <Loader2 className="h-10 w-10 text-emerald-600 animate-spin" />
+                        <div className="text-center">
+                            <h3 className="font-semibold text-lg">Searching Nearby...</h3>
+                            <p className="text-sm text-muted-foreground">Finding plant nurseries within {(radius / 1000).toFixed(0)} km of your location</p>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* Error State */}
+            {error && !loading && (
+                <Card className="border-amber-200 bg-amber-50">
+                    <CardContent className="p-6 text-center space-y-3">
+                        <p className="text-amber-800 font-medium">{error}</p>
+                        <Button onClick={expandRadius} className="gap-2">
+                            <Search size={14} /> Search Wider Area (+5 km)
+                        </Button>
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* Results Count */}
+            {!loading && nurseries.length > 0 && (
+                <div className="text-sm text-muted-foreground">
+                    Found <span className="font-bold text-foreground">{filteredNurseries.length}</span> nurseries within {(radius / 1000).toFixed(0)} km
                 </div>
             )}
 
-            {/* All Nurseries */}
-            <div className="space-y-4">
-                <h2 className="text-sm font-bold text-muted-foreground uppercase tracking-wider">🌿 All Nearby Nurseries</h2>
-                <div className="space-y-3">
-                    {(regular.length > 0 ? regular : filteredNurseries).map(nursery => (
-                        <Card key={nursery.id} className="hover:shadow-md transition-shadow">
-                            <CardContent className="p-0">
-                                <div className="flex">
-                                    <div className="w-32 md:w-48 flex-shrink-0">
-                                        <img src={nursery.image} alt={nursery.name} className="w-full h-full object-cover rounded-l-lg" />
-                                    </div>
-                                    <div className="flex-1 p-4 space-y-2">
-                                        <div className="flex justify-between items-start">
-                                            <h3 className="font-bold text-base">{nursery.name}</h3>
-                                            <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-full">{nursery.distance}</span>
+            {/* Nursery Tile Grid - MSN News Style */}
+            {!loading && filteredNurseries.length > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 auto-rows-[180px] gap-3">
+                    {filteredNurseries.map((nursery, idx) => {
+                        // Repeating tile pattern: large, std, std, wide, tall, std, std, wide...
+                        const pattern = [
+                            'col-span-2 row-span-2',  // large hero
+                            '',                        // standard
+                            '',                        // standard
+                            'col-span-2',              // wide
+                            'row-span-2',              // tall
+                            '',                        // standard
+                            '',                        // standard
+                            'col-span-2',              // wide
+                        ];
+                        const tileClass = pattern[idx % pattern.length];
+                        const isLarge = tileClass.includes('col-span-2') && tileClass.includes('row-span-2');
+                        const isWide = tileClass === 'col-span-2';
+                        const isTall = tileClass === 'row-span-2';
+
+                        return (
+                            <div
+                                key={nursery.id}
+                                className={`${tileClass} relative group cursor-pointer rounded-xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 hover:scale-[1.02]`}
+                                onClick={() => window.open(
+                                    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(nursery.name + ' ' + nursery.address)}`,
+                                    '_blank'
+                                )}
+                            >
+                                {/* Background Image */}
+                                <img
+                                    src={getPlantImage(nursery.type, nursery.id)}
+                                    alt={nursery.name}
+                                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                                    loading="lazy"
+                                />
+
+                                {/* Gradient Overlay */}
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+
+                                {/* Distance Badge */}
+                                <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm text-xs font-bold px-2.5 py-1 rounded-full shadow-lg text-emerald-700">
+                                    {nursery.distance} mi
+                                </div>
+
+                                {/* Type Badge */}
+                                <div className="absolute top-3 left-3">
+                                    <Badge className={`text-xs shadow-md ${getTypeColor(nursery.type)}`}>
+                                        {getTypeLabel(nursery.type)}
+                                    </Badge>
+                                </div>
+
+                                {/* Content Overlay */}
+                                <div className="absolute bottom-0 left-0 right-0 p-4">
+                                    <h3 className={`font-bold text-white drop-shadow-lg ${isLarge ? 'text-xl mb-1' : 'text-sm'}`}>
+                                        {nursery.name}
+                                    </h3>
+
+                                    {/* Show address on larger tiles */}
+                                    {(isLarge || isWide || isTall) && (
+                                        <div className="flex items-center gap-1.5 text-white/80 text-xs mt-1">
+                                            <MapPin size={11} /> {nursery.address}
                                         </div>
-                                        <StarRating rating={nursery.rating} />
-                                        <p className="text-sm text-muted-foreground line-clamp-2">{nursery.description}</p>
-                                        <div className="flex flex-wrap gap-1.5">
-                                            {nursery.specialties.map(spec => (
-                                                <Badge key={spec} variant="secondary" className="text-xs">{spec}</Badge>
-                                            ))}
+                                    )}
+
+                                    {/* Show hours on large tiles */}
+                                    {isLarge && nursery.hours && (
+                                        <div className="flex items-center gap-1.5 text-white/70 text-xs mt-1">
+                                            <Clock size={11} /> {nursery.hours}
                                         </div>
-                                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                                            <span className="flex items-center gap-1"><MapPin size={12} /> {nursery.address}</span>
-                                            <span className="flex items-center gap-1"><Clock size={12} /> {nursery.hours}</span>
-                                        </div>
-                                        {nursery.promo && (
-                                            <div className="text-xs text-emerald-700 font-medium">🎉 {nursery.promo}</div>
-                                        )}
-                                        <div className="flex gap-2 pt-1">
+                                    )}
+
+                                    {/* Action buttons on large tiles */}
+                                    {isLarge && (
+                                        <div className="flex gap-2 mt-3">
                                             <Button
                                                 size="sm"
-                                                className="text-xs gap-1 h-8"
-                                                onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(nursery.address)}`, '_blank')}
+                                                className="gap-1.5 text-xs h-8 bg-white/20 backdrop-blur-sm hover:bg-white/40 text-white border-white/30"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    window.open(
+                                                        `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(nursery.name + ' ' + nursery.address)}&travelmode=driving`,
+                                                        '_blank'
+                                                    );
+                                                }}
                                             >
-                                                <MapPin size={12} /> Directions
+                                                <Navigation size={12} /> Directions
                                             </Button>
-                                            <Button variant="outline" size="sm" className="text-xs gap-1 h-8" onClick={() => window.open(`tel:${nursery.phone}`)}>
-                                                <Phone size={12} /> Call
-                                            </Button>
+                                            {nursery.phone && (
+                                                <Button
+                                                    size="sm"
+                                                    className="gap-1.5 text-xs h-8 bg-white/20 backdrop-blur-sm hover:bg-white/40 text-white border-white/30"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        window.open(`tel:${nursery.phone}`);
+                                                    }}
+                                                >
+                                                    <Phone size={12} /> Call
+                                                </Button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Hover detail overlay for non-large tiles */}
+                                {!isLarge && (
+                                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
+                                        <div className="flex items-center gap-1.5 text-white/80 text-xs mb-1">
+                                            <MapPin size={11} /> {nursery.address}
+                                        </div>
+                                        {nursery.phone && (
+                                            <div className="flex items-center gap-1.5 text-white/80 text-xs mb-2">
+                                                <Phone size={11} /> {nursery.phone}
+                                            </div>
+                                        )}
+                                        <div className="flex gap-2">
+                                            <button
+                                                className="text-xs text-white bg-white/20 backdrop-blur-sm px-3 py-1.5 rounded-lg hover:bg-white/40 transition-colors flex items-center gap-1"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    window.open(
+                                                        `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(nursery.name + ' ' + nursery.address)}&travelmode=driving`,
+                                                        '_blank'
+                                                    );
+                                                }}
+                                            >
+                                                <Navigation size={10} /> Directions
+                                            </button>
                                         </div>
                                     </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ))}
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
-            </div>
+            )}
         </div>
     );
 }
