@@ -5,7 +5,7 @@ const bodyParser = require('body-parser');
 const app = express();
 const PORT = 3001;
 
-app.use(cors());
+app.use(cors()); // Allow all origins for development
 app.use(bodyParser.json());
 
 // --- In-Memory Database (Mock) ---
