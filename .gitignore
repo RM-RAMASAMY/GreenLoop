@@ -1,4 +1,7 @@
 /backend/node_modules
 /mobile/node_modules
+/frontend/node_modules
+.env
+backend/.env
 background_video/sfhacks_background.mp4
 frontend/public/sfhacks_background.mp4

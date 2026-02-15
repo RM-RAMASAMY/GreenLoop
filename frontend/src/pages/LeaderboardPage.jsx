@@ -1,35 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { Medal, Filter } from 'lucide-react';
+import { Medal, Filter, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { cn } from '../components/ui/Button';
 
-export default function LeaderboardPage() {
-    const [data, setData] = useState({ neighborhood: [], campus: [], company: [] });
-    const [activeTab, setActiveTab] = useState('neighborhood');
+const API_URL = 'http://localhost:3001';
+
+export default function LeaderboardPage({ token }) {
+    const [users, setUsers] = useState([]);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        axios.get('http://localhost:3001/api/leaderboard')
-            .then(res => setData(res.data))
-            .catch(err => {
-                console.error("Using mock leaderboard data");
-                setData({
-                    neighborhood: [
-                        { id: 1, name: 'EcoWarrior', xp: 4250 },
-                        { id: 2, name: 'GreenThumb', xp: 3800 },
-                        { id: 3, name: 'NatureLover', xp: 3500 },
-                        { id: 4, name: 'RecycleKing', xp: 2100 },
-                        { id: 5, name: 'SolarPower', xp: 1500 },
-                    ],
-                    campus: [],
-                    company: []
-                });
-            });
+        fetch(`${API_URL}/api/leaderboard`)
+            .then(res => res.json())
+            .then(data => {
+                if (Array.isArray(data)) setUsers(data);
+                setLoading(false);
+            })
+            .catch(() => setLoading(false));
     }, []);
 
-    const getList = () => data[activeTab] || [];
+    const getLevelLabel = (xp) => {
+        if (xp >= 5000) return 'Forest';
+        if (xp >= 2000) return 'Tree';
+        if (xp >= 500) return 'Sapling';
+        if (xp >= 100) return 'Seedling';
+        return 'Seed';
+    };
 
     return (
         <div className="space-y-8">
@@ -38,75 +36,80 @@ export default function LeaderboardPage() {
                     <h1 className="text-3xl font-bold tracking-tight">Leaderboards</h1>
                     <p className="text-muted-foreground">See who is making the biggest impact.</p>
                 </div>
-                <Button variant="outline">
-                    <Filter className="mr-2 h-4 w-4" /> Filter
-                </Button>
             </div>
 
             <Card className="overflow-hidden">
-                <div className="flex border-b border-border bg-muted/30">
-                    {['neighborhood', 'campus', 'company'].map(tab => (
-                        <div
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={cn(
-                                "px-6 py-4 cursor-pointer font-medium text-sm capitalize transition-all border-b-2",
-                                activeTab === tab
-                                    ? "border-primary text-primary bg-background"
-                                    : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                            )}
-                        >
-                            {tab}
-                        </div>
-                    ))}
-                </div>
-
-                <div className="relative w-full overflow-auto">
-                    <table className="w-full caption-bottom text-sm text-left">
-                        <thead className="[&_tr]:border-b">
-                            <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-                                <th className="h-12 px-4 align-middle font-medium text-muted-foreground text-center w-20">Rank</th>
-                                <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Name</th>
-                                <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Impact Level</th>
-                                <th className="h-12 px-4 align-middle font-medium text-muted-foreground text-right w-32">Total XP</th>
-                            </tr>
-                        </thead>
-                        <tbody className="[&_tr:last-child]:border-0">
-                            {getList().map((user, index) => (
-                                <tr key={user.id} className="border-b transition-colors hover:bg-muted/50">
-                                    <td className="p-4 text-center">
-                                        {index < 3 ? (
-                                            <div className={cn(
-                                                "w-8 h-8 rounded-full flex items-center justify-center mx-auto font-bold",
-                                                index === 0 ? "bg-amber-100 text-amber-600" :
-                                                    index === 1 ? "bg-slate-100 text-slate-600" :
-                                                        "bg-orange-100 text-orange-600"
-                                            )}>
-                                                <Medal size={16} />
-                                            </div>
-                                        ) : (
-                                            <span className="text-muted-foreground font-semibold">{index + 1}</span>
-                                        )}
-                                    </td>
-                                    <td className="p-4">
-                                        <div className="font-semibold text-foreground">{user.name}</div>
-                                        <div className="text-xs text-muted-foreground">Member since 2024</div>
-                                    </td>
-                                    <td className="p-4">
-                                        <Badge variant="secondary" className={cn(
-                                            index < 3 ? "bg-green-100 text-green-800 hover:bg-green-200" : "bg-blue-100 text-blue-800 hover:bg-blue-200"
-                                        )}>
-                                            {index < 3 ? 'Elite Eco-Hero' : 'Contributor'}
-                                        </Badge>
-                                    </td>
-                                    <td className="p-4 text-right font-bold text-emerald-600">
-                                        {user.xp.toLocaleString()}
-                                    </td>
+                {loading ? (
+                    <div className="flex items-center justify-center p-12">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    </div>
+                ) : users.length === 0 ? (
+                    <div className="text-center p-12 text-muted-foreground">
+                        <Medal className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                        <p className="font-medium">No data yet</p>
+                        <p className="text-sm">Be the first to log activities and appear on the leaderboard!</p>
+                    </div>
+                ) : (
+                    <div className="relative w-full overflow-auto">
+                        <table className="w-full caption-bottom text-sm text-left">
+                            <thead className="[&_tr]:border-b">
+                                <tr className="border-b transition-colors hover:bg-muted/50">
+                                    <th className="h-12 px-4 align-middle font-medium text-muted-foreground text-center w-20">Rank</th>
+                                    <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Name</th>
+                                    <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Impact Level</th>
+                                    <th className="h-12 px-4 align-middle font-medium text-muted-foreground text-right w-32">Total XP</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+                            <tbody className="[&_tr:last-child]:border-0">
+                                {users.map((user, index) => (
+                                    <tr key={user._id} className="border-b transition-colors hover:bg-muted/50">
+                                        <td className="p-4 text-center">
+                                            {index < 3 ? (
+                                                <div className={cn(
+                                                    "w-8 h-8 rounded-full flex items-center justify-center mx-auto font-bold",
+                                                    index === 0 ? "bg-amber-100 text-amber-600" :
+                                                        index === 1 ? "bg-slate-100 text-slate-600" :
+                                                            "bg-orange-100 text-orange-600"
+                                                )}>
+                                                    <Medal size={16} />
+                                                </div>
+                                            ) : (
+                                                <span className="text-muted-foreground font-semibold">{index + 1}</span>
+                                            )}
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="flex items-center gap-3">
+                                                {user.avatar ? (
+                                                    <img src={user.avatar} alt={user.name} className="w-8 h-8 rounded-full object-cover" />
+                                                ) : (
+                                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white text-xs font-bold">
+                                                        {user.name?.charAt(0)?.toUpperCase() || '?'}
+                                                    </div>
+                                                )}
+                                                <div>
+                                                    <div className="font-semibold text-foreground">{user.name}</div>
+                                                    <div className="text-xs text-muted-foreground">
+                                                        Joined {new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="p-4">
+                                            <Badge variant="secondary" className={cn(
+                                                index < 3 ? "bg-green-100 text-green-800 hover:bg-green-200" : "bg-blue-100 text-blue-800 hover:bg-blue-200"
+                                            )}>
+                                                {getLevelLabel(user.totalXP)}
+                                            </Badge>
+                                        </td>
+                                        <td className="p-4 text-right font-bold text-emerald-600">
+                                            {user.totalXP?.toLocaleString()}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </Card>
         </div>
     );

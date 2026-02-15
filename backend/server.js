@@ -1,239 +1,427 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const mongoose = require('mongoose');
+const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const jwt = require('jsonwebtoken');
+
+// Models
+const User = require('./models/User');
+const Action = require('./models/Action');
+const Swap = require('./models/Swap');
 
 const app = express();
 const PORT = 3001;
 
-app.use(cors()); // Allow all origins for development
+// --- Middleware ---
+app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true }));
 app.use(bodyParser.json());
 
-// --- In-Memory Database (Mock) ---
+// --- MongoDB Connection ---
+mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/greenloop')
+    .then(() => console.log('✅ Connected to MongoDB'))
+    .catch(err => console.error('❌ MongoDB connection error:', err.message));
 
-const users = [
-    {
-        id: 'user1',
-        name: 'EcoWarrior',
-        email: 'user@example.com',
-        totalXP: 1250,
-        level: 'Sapling',
-        garden: [], // Array of planted items
-        history: [], // History of actions
-        streak: 5,
-        location: { lat: 37.7749, lng: -122.4194 } // San Francisco
+// --- Passport Google OAuth ---
+passport.use(new GoogleStrategy({
+    clientID: process.env.GOOGLE_CLIENT_ID || 'placeholder',
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET || 'placeholder',
+    callbackURL: '/auth/google/callback',
+}, async (accessToken, refreshToken, profile, done) => {
+    try {
+        // Find or create user
+        let user = await User.findOne({ googleId: profile.id });
+        if (!user) {
+            user = await User.create({
+                googleId: profile.id,
+                name: profile.displayName,
+                email: profile.emails?.[0]?.value || `${profile.id}@google.com`,
+                avatar: profile.photos?.[0]?.value || null,
+            });
+            console.log('🆕 New user created:', user.name);
+        }
+        done(null, user);
+    } catch (err) {
+        done(err, null);
     }
-];
+}));
 
-const leaderboards = {
-    neighborhood: [
-        { id: 'u2', name: 'NeighborNed', xp: 1500 },
-        { id: 'user1', name: 'EcoWarrior', xp: 1250 },
-        { id: 'u3', name: 'SallySustainable', xp: 900 }
-    ],
-    campus: [
-        { id: 'c1', name: 'Biology Dept', xp: 50000 },
-        { id: 'c2', name: 'Computer Science', xp: 45000 }
-    ],
-    company: [
-        { id: 'comp1', name: 'GreenCorp', xp: 100000 },
-        { id: 'comp2', name: 'TechGiant', xp: 80000 }
-    ]
-};
+app.use(passport.initialize());
 
-const products = [
-    {
-        id: 'p1',
-        name: 'Plastic Water Bottle',
-        category: 'Hydration',
-        ecoScore: 10,
-        keywords: ['plastic', 'disposable', 'water bottle'],
-        swap: {
-            id: 's1',
-            name: 'Stainless Steel Bottle',
-            ecoScore: 95,
-            image: 'https://images.unsplash.com/photo-1602143407151-11115cdbf69c?w=400',
-            description: 'Lasts a lifetime, keeps water cold.'
-        }
-    },
-    {
-        id: 'p2',
-        name: 'Head & Shoulders Shampoo', // Example from FRD
-        category: 'Personal Care',
-        ecoScore: 30,
-        keywords: ['shampoo', 'plastic bottle', 'head & shoulders'],
-        swap: {
-            id: 's2',
-            name: 'Ethique Shampoo Bar',
-            ecoScore: 98,
-            image: 'https://plus.unsplash.com/premium_photo-1675806655187-d46ae3722c83?w=400',
-            description: 'Plastic-free, concentrated, lasts longer.'
-        }
-    },
-    {
-        id: 'p3',
-        name: 'Plastic Toothbrush',
-        category: 'Personal Care',
-        ecoScore: 20,
-        keywords: ['toothbrush', 'plastic brush', 'oral care'],
-        swap: {
-            id: 's3',
-            name: 'Bamboo Toothbrush',
-            ecoScore: 99,
-            image: 'https://images.unsplash.com/photo-1607613009820-a29f7bb6dcaf?w=400',
-            description: 'Biodegradable handle, natural bristles.'
-        }
-    },
-    {
-        id: 'p4',
-        name: 'Plastic Straws',
-        category: 'Kitchen',
-        ecoScore: 5,
-        keywords: ['straw', 'plastic straw', 'drinking straw'],
-        swap: {
-            id: 's4',
-            name: 'Stainless Steel Straws',
-            ecoScore: 95,
-            image: 'https://images.unsplash.com/photo-1541108564883-b68486299580?w=400',
-            description: 'Reusable, easy to clean, ocean-friendly.'
-        }
-    },
-    {
-        id: 'p5',
-        name: 'Plastic Grocery Bag',
-        category: 'Shopping',
-        ecoScore: 10,
-        keywords: ['bag', 'shopping bag', 'plastic bag', 'carrier bag'],
-        swap: {
-            id: 's5',
-            name: 'Organic Cotton Tote',
-            ecoScore: 92,
-            image: 'https://images.unsplash.com/photo-1597484661643-2f5fef640dd1?w=400',
-            description: 'Durable, washable, replaces 1000+ bags.'
-        }
-    },
-    {
-        id: 'p6',
-        name: 'Plastic Cutlery',
-        category: 'Kitchen',
-        ecoScore: 15,
-        keywords: ['fork', 'spoon', 'knife', 'plastic cutlery', 'disposable cutlery'],
-        swap: {
-            id: 's6',
-            name: 'Bamboo Travel Cutlery',
-            ecoScore: 97,
-            image: 'https://images.unsplash.com/photo-1584346133934-a3afd2a8d6f1?w=400',
-            description: 'Lightweight, sustainable, perfect for travel.'
-        }
+// --- JWT Helpers ---
+function generateToken(user) {
+    return jwt.sign(
+        { id: user._id, name: user.name, email: user.email, avatar: user.avatar },
+        process.env.JWT_SECRET || 'dev-secret',
+        { expiresIn: '7d' }
+    );
+}
+
+function authMiddleware(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'No token provided' });
     }
-];
+    try {
+        const token = authHeader.split(' ')[1];
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret');
+        req.userId = decoded.id;
+        req.userName = decoded.name;
+        next();
+    } catch (err) {
+        return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+}
 
-// --- Helper Functions ---
+// --- Auth Routes ---
 
-const calculateLevel = (xp) => {
-    if (xp < 100) return 'Seed';
-    if (xp < 500) return 'Seedling';
-    if (xp < 2000) return 'Sapling';
-    if (xp < 5000) return 'Tree';
-    return 'Forest';
-};
+// Start Google OAuth flow
+app.get('/auth/google', passport.authenticate('google', {
+    scope: ['profile', 'email'],
+    session: false,
+}));
 
-// --- API Endpoints ---
+// Google OAuth callback
+app.get('/auth/google/callback',
+    passport.authenticate('google', { session: false, failureRedirect: `${process.env.FRONTEND_URL || 'http://localhost:5173'}?error=auth_failed` }),
+    (req, res) => {
+        const token = generateToken(req.user);
+        // Redirect to frontend with token
+        res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}?token=${token}`);
+    }
+);
 
-// 0. Root Endpoint (Health Check)
+// Demo login (for development without Google OAuth configured)
+app.post('/auth/demo-login', async (req, res) => {
+    const { name, email } = req.body;
+    try {
+        let user = await User.findOne({ email });
+        if (!user) {
+            user = await User.create({
+                name: name || 'EcoWarrior',
+                email: email || 'demo@greenloop.app',
+                totalXP: 250,
+            });
+            // Seed some demo data for new users
+            await seedDemoData(user._id);
+        } else if (name && name !== user.name) {
+            // Update name if user provided a new one
+            user.name = name;
+            await user.save();
+        }
+        const token = generateToken(user);
+        res.json({ token, user: { id: user._id, name: user.name, email: user.email, avatar: user.avatar } });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- API Routes ---
+
+// 0. Health Check
 app.get('/', (req, res) => {
-    res.send('🌿 GreenLoop Backend is Active! Try /api/user/user1');
+    res.json({ status: '🌿 GreenLoop Backend Active', db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected' });
 });
 
-// 1. Get User Data
-app.get('/api/user/:id', (req, res) => {
-    const user = users.find(u => u.id === req.params.id) || users[0]; // Default to first user for demo
-    res.json(user);
-});
-
-// 2. Log Action (The Core Loop)
-app.post('/api/action', (req, res) => {
-    const { userId, actionType, details } = req.body;
-    // details: { product, location, plantName, etc. }
-
-    // Find user (or default)
-    let user = users.find(u => u.id === userId);
-    if (!user) user = users[0];
-
-    let xpGained = 0;
-    let message = '';
-
-    switch (actionType) {
-        case 'PLANT':
-            xpGained = 50;
-            message = 'You planted a new life!';
-            if (details.plantName) {
-                user.garden.push({
-                    id: Date.now(),
-                    name: details.plantName,
-                    plantedAt: new Date(),
-                    location: details.location || user.location
-                });
-            }
-            break;
-        case 'SWAP':
-            xpGained = 100;
-            message = `Great choice swapping to ${details.productName}!`;
-            break;
-        case 'WALK':
-            xpGained = 30;
-            message = 'Walking saves carbon!';
-            break;
-        case 'REFILL':
-            xpGained = 10;
-            message = 'Hydrated and sustainable!';
-            break;
-        case 'COMPOST':
-            xpGained = 20;
-            message = 'Feeding the earth!';
-            break;
-        default:
-            xpGained = 5;
-            message = 'Action logged.';
+// 1. Get Current User
+app.get('/api/user/me', authMiddleware, async (req, res) => {
+    try {
+        const user = await User.findById(req.userId).select('-__v');
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        res.json(user);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
-
-    user.totalXP += xpGained;
-    user.level = calculateLevel(user.totalXP);
-    user.history.unshift({ action: actionType, xp: xpGained, date: new Date(), details });
-
-    res.json({
-        success: true,
-        message,
-        xpGained,
-        newTotal: user.totalXP,
-        newLevel: user.level
-    });
 });
 
-// 3. Product Search (For Chrome Extension)
+// 2. Get User Stats (Dashboard data)
+app.get('/api/user/me/stats', authMiddleware, async (req, res) => {
+    try {
+        const user = await User.findById(req.userId);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        // Get actions from the last 7 days for chart data
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+        const recentActions = await Action.find({
+            userId: req.userId,
+            createdAt: { $gte: sevenDaysAgo }
+        }).sort({ createdAt: 1 });
+
+        // Aggregate XP by day for chart
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const xpByDay = {};
+        days.forEach(d => xpByDay[d] = 0);
+        recentActions.forEach(a => {
+            const day = days[new Date(a.createdAt).getDay()];
+            xpByDay[day] += a.xpGained;
+        });
+        const xpData = days.map(d => ({ name: d, xp: xpByDay[d] }));
+
+        // Impact breakdown from swaps
+        const swaps = await Swap.find({ userId: req.userId });
+        const totalCO2 = swaps.reduce((sum, s) => sum + (s.co2Saved || 0), 0);
+        const totalPlastic = swaps.reduce((sum, s) => sum + (s.plasticSaved || 0), 0);
+        const totalActions = await Action.countDocuments({ userId: req.userId });
+
+        const impactData = [
+            { name: 'Activities', value: totalActions, color: '#10B981' },
+            { name: 'CO₂ Saved', value: Math.round(totalCO2 * 10), color: '#3B82F6' },
+            { name: 'Plastic', value: Math.round(totalPlastic / 10), color: '#F59E0B' },
+        ];
+
+        res.json({
+            name: user.name,
+            level: user.level,
+            xp: user.totalXP,
+            nextLevelXp: getNextLevelXp(user.totalXP),
+            streak: user.streak,
+            xpData,
+            impactData,
+            totalActions,
+            totalSwaps: swaps.length,
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 3. Log Action
+app.post('/api/action', authMiddleware, async (req, res) => {
+    const { actionType, details } = req.body;
+
+    const xpMap = { PLANT: 50, SWAP: 100, WALK: 30, REFILL: 10, COMPOST: 20, CLEANUP: 40, OBSERVE: 15 };
+    const xpGained = xpMap[actionType] || 5;
+
+    try {
+        const action = await Action.create({
+            userId: req.userId,
+            actionType,
+            details,
+            xpGained,
+            location: details?.location || null,
+        });
+
+        // Update user XP
+        const user = await User.findById(req.userId);
+        user.totalXP += xpGained;
+        user.calculateLevel();
+        await user.save();
+
+        const messages = {
+            PLANT: 'You planted a new life! 🌱',
+            SWAP: `Great choice swapping to ${details?.productName || 'an eco product'}!`,
+            WALK: 'Walking saves carbon! 🚶',
+            REFILL: 'Hydrated and sustainable! 💧',
+            COMPOST: 'Feeding the earth! 🌍',
+            CLEANUP: 'Making the world cleaner! 🧹',
+            OBSERVE: 'Eyes on the environment! 👀',
+        };
+
+        res.json({
+            success: true,
+            message: messages[actionType] || 'Action logged!',
+            xpGained,
+            newTotal: user.totalXP,
+            newLevel: user.level,
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 4. Get Swaps
+app.get('/api/swaps', authMiddleware, async (req, res) => {
+    try {
+        const swaps = await Swap.find({ userId: req.userId }).sort({ createdAt: -1 });
+        res.json(swaps);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 5. Log a Swap
+app.post('/api/swaps', authMiddleware, async (req, res) => {
+    try {
+        const swap = await Swap.create({ userId: req.userId, ...req.body });
+
+        // Also give XP
+        const user = await User.findById(req.userId);
+        user.totalXP += swap.xp || 100;
+        user.calculateLevel();
+        await user.save();
+
+        res.json({ success: true, swap, newTotal: user.totalXP });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 6. Leaderboard (top users by XP)
+app.get('/api/leaderboard', async (req, res) => {
+    try {
+        const users = await User.find({ totalXP: { $gt: 0 } })
+            .select('name totalXP level avatar createdAt')
+            .sort({ totalXP: -1 })
+            .limit(20);
+        res.json(users);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 7. Get User Settings
+app.get('/api/user/me/settings', authMiddleware, async (req, res) => {
+    try {
+        const user = await User.findById(req.userId).select('settings');
+        res.json(user?.settings || {});
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 8. Update User Settings
+app.put('/api/user/me/settings', authMiddleware, async (req, res) => {
+    try {
+        const user = await User.findById(req.userId);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        user.settings = { ...user.settings.toObject(), ...req.body };
+        await user.save();
+        res.json({ success: true, settings: user.settings });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 9. Get Recent Actions (for Profile page)
+app.get('/api/actions', authMiddleware, async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 10;
+        const actions = await Action.find({ userId: req.userId })
+            .sort({ createdAt: -1 })
+            .limit(limit);
+        res.json(actions);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 10. Get All Plant Pins for Map
+app.get('/api/plants', async (req, res) => {
+    try {
+        // Find all PLANT actions that have a location
+        const actions = await Action.find({
+            actionType: 'PLANT',
+            'location.lat': { $exists: true },
+            'location.lng': { $exists: true }
+        }).populate('userId', 'name');
+
+        // Map to format suitable for MapPage pins
+        const plantPins = actions.map(a => ({
+            id: a._id,
+            lat: a.location.lat,
+            lng: a.location.lng,
+            userName: a.userId?.name || 'EcoWarrior',
+            plantNumber: a.details?.plantName || 'Plant',
+            type: a.details?.plantType || 'tree',
+            title: a.details?.title || 'Green Spot',
+            desc: a.details?.description || 'Planted with GreenLoop',
+            createdAt: a.createdAt
+        }));
+
+        res.json(plantPins);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 11. Product Search (for Chrome Extension — public)
+const products = [
+    { id: 'p1', name: 'Plastic Water Bottle', category: 'Hydration', ecoScore: 10, keywords: ['plastic', 'disposable', 'water bottle'], swap: { name: 'Stainless Steel Bottle', ecoScore: 95, description: 'Lasts a lifetime, keeps water cold.' } },
+    { id: 'p2', name: 'Head & Shoulders Shampoo', category: 'Personal Care', ecoScore: 30, keywords: ['shampoo', 'plastic bottle', 'head & shoulders'], swap: { name: 'Ethique Shampoo Bar', ecoScore: 98, description: 'Plastic-free, concentrated, lasts longer.' } },
+    { id: 'p3', name: 'Plastic Toothbrush', category: 'Personal Care', ecoScore: 20, keywords: ['toothbrush', 'plastic brush', 'oral care'], swap: { name: 'Bamboo Toothbrush', ecoScore: 99, description: 'Biodegradable handle, natural bristles.' } },
+    { id: 'p4', name: 'Plastic Straws', category: 'Kitchen', ecoScore: 5, keywords: ['straw', 'plastic straw'], swap: { name: 'Stainless Steel Straws', ecoScore: 95, description: 'Reusable, easy to clean.' } },
+    { id: 'p5', name: 'Plastic Grocery Bag', category: 'Shopping', ecoScore: 10, keywords: ['bag', 'shopping bag', 'plastic bag'], swap: { name: 'Organic Cotton Tote', ecoScore: 92, description: 'Durable, replaces 1000+ bags.' } },
+    { id: 'p6', name: 'Plastic Cutlery', category: 'Kitchen', ecoScore: 15, keywords: ['fork', 'spoon', 'knife', 'cutlery'], swap: { name: 'Bamboo Travel Cutlery', ecoScore: 97, description: 'Lightweight, sustainable.' } },
+];
+
 app.get('/api/products/search', (req, res) => {
     const query = req.query.q?.toLowerCase();
     if (!query) return res.json([]);
-
-    // Simple keyword match
     const match = products.find(p => p.keywords.some(k => query.includes(k)));
-
     if (match) {
-        res.json({
-            found: true,
-            original: { name: match.name, ecoScore: match.ecoScore },
-            swap: match.swap
-        });
+        res.json({ found: true, original: { name: match.name, ecoScore: match.ecoScore }, swap: match.swap });
     } else {
         res.json({ found: false });
     }
 });
 
-// 4. Get Leaderboards
-app.get('/api/leaderboard', (req, res) => {
-    res.json(leaderboards);
-});
+// --- Helpers ---
+function getNextLevelXp(xp) {
+    if (xp < 100) return 100;
+    if (xp < 500) return 500;
+    if (xp < 2000) return 2000;
+    if (xp < 5000) return 5000;
+    return 10000;
+}
 
-// Start Server
+// Seed demo data for new users
+async function seedDemoData(userId) {
+    const demoActions = [
+        {
+            userId,
+            actionType: 'PLANT',
+            details: {
+                plantName: 'Coast Live Oak',
+                plantType: 'tree',
+                title: 'Golden Gate Park Garden',
+                description: 'Planted near the entrance'
+            },
+            xpGained: 50,
+            location: { lat: 37.7694, lng: -122.4862 }
+        },
+        {
+            userId,
+            actionType: 'PLANT',
+            details: {
+                plantName: 'California Poppy',
+                plantType: 'flower',
+                title: 'Presidio Wildflowers',
+                description: 'Helping native pollinators'
+            },
+            xpGained: 50,
+            location: { lat: 37.7984, lng: -122.4662 }
+        },
+        {
+            userId,
+            actionType: 'PLANT',
+            details: {
+                plantName: 'Manzanita',
+                plantType: 'bush',
+                title: 'Bernal Heights Patch',
+                description: 'Drought-resistant native'
+            },
+            xpGained: 50,
+            location: { lat: 37.7431, lng: -122.4162 }
+        },
+        { userId, actionType: 'WALK', details: { description: 'Walked to work instead of driving' }, xpGained: 30 },
+        { userId, actionType: 'REFILL', details: { description: 'Used reusable water bottle' }, xpGained: 10 },
+        { userId, actionType: 'COMPOST', details: { description: 'Composted kitchen scraps' }, xpGained: 20 },
+        { userId, actionType: 'CLEANUP', details: { description: 'Beach cleanup at Ocean Beach', location: 'Ocean Beach, SF' }, xpGained: 40 },
+    ];
+    const demoSwaps = [
+        { userId, original: 'Plastic Water Bottle', swap: 'Stainless Steel Bottle', category: 'Hydration', ecoScoreBefore: 10, ecoScoreAfter: 95, xp: 100, co2Saved: 0.8, plasticSaved: 42 },
+        { userId, original: 'Head & Shoulders Shampoo', swap: 'Ethique Shampoo Bar', category: 'Personal Care', ecoScoreBefore: 30, ecoScoreAfter: 98, xp: 100, co2Saved: 1.2, plasticSaved: 85 },
+        { userId, original: 'Plastic Straws', swap: 'Stainless Steel Straws', category: 'Kitchen', ecoScoreBefore: 5, ecoScoreAfter: 95, xp: 100, co2Saved: 0.5, plasticSaved: 30 },
+    ];
+    await Action.insertMany(demoActions);
+    await Swap.insertMany(demoSwaps);
+}
+
+// --- Start Server ---
 app.listen(PORT, () => {
-    console.log(`GreenLoop Backend running on http://localhost:${PORT}`);
+    console.log(`🌿 GreenLoop Backend running on http://localhost:${PORT}`);
 });

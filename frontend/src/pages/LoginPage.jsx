@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Leaf, Mail, Lock, Eye, EyeOff, ArrowRight, Github, Sparkles } from 'lucide-react';
 
-export default function LoginPage({ onLogin }) {
+export default function LoginPage({ onLogin, onGoogleSSO }) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
@@ -9,23 +9,28 @@ export default function LoginPage({ onLogin }) {
     const [loading, setLoading] = useState(false);
     const [name, setName] = useState('');
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
-        setTimeout(() => {
-            setLoading(false);
-            onLogin({ name: name || 'EcoWarrior', email });
-        }, 1200);
+        try {
+            await onLogin({ name: name || 'EcoWarrior', email: email || 'demo@greenloop.app' });
+        } catch (err) {
+            console.error(err);
+        }
+        setLoading(false);
     };
 
     const handleGoogleSSO = () => {
         setLoading(true);
-        // In production, this would redirect to Google OAuth
-        // For demo, simulate SSO flow
-        setTimeout(() => {
-            setLoading(false);
-            onLogin({ name: 'EcoWarrior', email: 'user@gmail.com', provider: 'google' });
-        }, 1500);
+        if (onGoogleSSO) {
+            onGoogleSSO(); // Redirects to backend Google OAuth
+        } else {
+            // Fallback for demo
+            setTimeout(() => {
+                setLoading(false);
+                onLogin({ name: 'EcoWarrior', email: 'user@gmail.com', provider: 'google' });
+            }, 1500);
+        }
     };
 
     return (

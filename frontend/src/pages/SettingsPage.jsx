@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Settings, Bell, Moon, Sun, Globe, Shield, Eye, Smartphone,
-    Mail, MapPin, Trash2, Download, ChevronRight, ToggleLeft, ToggleRight, Palette
+    Mail, MapPin, Trash2, Download, ChevronRight, ToggleLeft, ToggleRight, Palette, Loader2, Check
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
+
+const API_URL = 'http://localhost:3001';
 
 function ToggleSwitch({ enabled, onChange, label, description, icon: Icon }) {
     return (
@@ -31,38 +33,97 @@ function ToggleSwitch({ enabled, onChange, label, description, icon: Icon }) {
     );
 }
 
-export default function SettingsPage() {
-    // Notification settings
-    const [pushNotifs, setPushNotifs] = useState(true);
-    const [emailNotifs, setEmailNotifs] = useState(true);
-    const [weeklyDigest, setWeeklyDigest] = useState(false);
-    const [swapAlerts, setSwapAlerts] = useState(true);
-    const [leaderboardAlerts, setLeaderboardAlerts] = useState(true);
+export default function SettingsPage({ token }) {
+    const [settings, setSettings] = useState({
+        pushNotifications: true,
+        emailNotifications: true,
+        weeklyDigest: false,
+        swapAlerts: true,
+        leaderboardUpdates: false,
+        darkMode: false,
+        compactMode: false,
+        publicProfile: true,
+        showOnLeaderboard: true,
+        shareActivity: false,
+        locationServices: true,
+        autoDetectProducts: true,
+        showSwapPopup: true,
+    });
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
 
-    // Privacy settings
-    const [publicProfile, setPublicProfile] = useState(true);
-    const [showLeaderboard, setShowLeaderboard] = useState(true);
-    const [shareActivity, setShareActivity] = useState(false);
-    const [locationTracking, setLocationTracking] = useState(true);
+    // Fetch settings from backend
+    useEffect(() => {
+        if (!token) { setLoading(false); return; }
+        fetch(`${API_URL}/api/user/me/settings`, {
+            headers: { Authorization: `Bearer ${token}` }
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data && !data.error) {
+                    setSettings(prev => ({ ...prev, ...data }));
+                }
+                setLoading(false);
+            })
+            .catch(() => setLoading(false));
+    }, [token]);
 
-    // Appearance
-    const [darkMode, setDarkMode] = useState(false);
-    const [compactMode, setCompactMode] = useState(false);
+    // Save individual setting to backend
+    const updateSetting = (key, value) => {
+        setSettings(prev => ({ ...prev, [key]: value }));
+        setSaved(false);
 
-    // Extension
-    const [autoDetect, setAutoDetect] = useState(true);
-    const [showPopup, setShowPopup] = useState(true);
+        if (token) {
+            setSaving(true);
+            fetch(`${API_URL}/api/user/me/settings`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ [key]: value })
+            })
+                .then(res => res.json())
+                .then(() => {
+                    setSaving(false);
+                    setSaved(true);
+                    setTimeout(() => setSaved(false), 2000);
+                })
+                .catch(() => setSaving(false));
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center p-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+        );
+    }
 
     return (
         <div className="max-w-3xl mx-auto space-y-8">
             {/* Header */}
-            <div className="space-y-1">
-                <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-                    <Settings className="text-muted-foreground" /> Settings
-                </h1>
-                <p className="text-muted-foreground">
-                    Manage your GreenLoop account preferences and privacy settings.
-                </p>
+            <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                    <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
+                        <Settings className="text-muted-foreground" /> Settings
+                    </h1>
+                    <p className="text-muted-foreground">
+                        Manage your GreenLoop account preferences and privacy settings.
+                    </p>
+                </div>
+                {saving && (
+                    <Badge className="bg-amber-100 text-amber-700 animate-pulse">
+                        <Loader2 size={12} className="mr-1 animate-spin" /> Saving...
+                    </Badge>
+                )}
+                {saved && (
+                    <Badge className="bg-emerald-100 text-emerald-700">
+                        <Check size={12} className="mr-1" /> Saved
+                    </Badge>
+                )}
             </div>
 
             {/* Notifications */}
@@ -73,11 +134,11 @@ export default function SettingsPage() {
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="divide-y divide-border">
-                    <ToggleSwitch icon={Bell} enabled={pushNotifs} onChange={setPushNotifs} label="Push Notifications" description="Get notified about new achievements and milestones" />
-                    <ToggleSwitch icon={Mail} enabled={emailNotifs} onChange={setEmailNotifs} label="Email Notifications" description="Receive activity summaries via email" />
-                    <ToggleSwitch icon={Mail} enabled={weeklyDigest} onChange={setWeeklyDigest} label="Weekly Digest" description="A weekly summary of your eco impact" />
-                    <ToggleSwitch icon={Smartphone} enabled={swapAlerts} onChange={setSwapAlerts} label="Swap Alerts" description="Get notified when new eco swaps are available" />
-                    <ToggleSwitch icon={Smartphone} enabled={leaderboardAlerts} onChange={setLeaderboardAlerts} label="Leaderboard Updates" description="Know when your ranking changes" />
+                    <ToggleSwitch icon={Bell} enabled={settings.pushNotifications} onChange={(v) => updateSetting('pushNotifications', v)} label="Push Notifications" description="Get notified about new achievements and milestones" />
+                    <ToggleSwitch icon={Mail} enabled={settings.emailNotifications} onChange={(v) => updateSetting('emailNotifications', v)} label="Email Notifications" description="Receive activity summaries via email" />
+                    <ToggleSwitch icon={Mail} enabled={settings.weeklyDigest} onChange={(v) => updateSetting('weeklyDigest', v)} label="Weekly Digest" description="A weekly summary of your eco impact" />
+                    <ToggleSwitch icon={Smartphone} enabled={settings.swapAlerts} onChange={(v) => updateSetting('swapAlerts', v)} label="Swap Alerts" description="Get notified when new eco swaps are available" />
+                    <ToggleSwitch icon={Smartphone} enabled={settings.leaderboardUpdates} onChange={(v) => updateSetting('leaderboardUpdates', v)} label="Leaderboard Updates" description="Know when your ranking changes" />
                 </CardContent>
             </Card>
 
@@ -89,8 +150,8 @@ export default function SettingsPage() {
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="divide-y divide-border">
-                    <ToggleSwitch icon={Moon} enabled={darkMode} onChange={setDarkMode} label="Dark Mode" description="Switch to a darker color scheme" />
-                    <ToggleSwitch icon={Eye} enabled={compactMode} onChange={setCompactMode} label="Compact Mode" description="Reduce spacing for a denser layout" />
+                    <ToggleSwitch icon={Moon} enabled={settings.darkMode} onChange={(v) => updateSetting('darkMode', v)} label="Dark Mode" description="Switch to a darker color scheme" />
+                    <ToggleSwitch icon={Eye} enabled={settings.compactMode} onChange={(v) => updateSetting('compactMode', v)} label="Compact Mode" description="Reduce spacing for a denser layout" />
                 </CardContent>
             </Card>
 
@@ -102,10 +163,10 @@ export default function SettingsPage() {
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="divide-y divide-border">
-                    <ToggleSwitch icon={Eye} enabled={publicProfile} onChange={setPublicProfile} label="Public Profile" description="Allow others to see your profile and stats" />
-                    <ToggleSwitch icon={Globe} enabled={showLeaderboard} onChange={setShowLeaderboard} label="Show on Leaderboard" description="Appear in public leaderboard rankings" />
-                    <ToggleSwitch icon={Globe} enabled={shareActivity} onChange={setShareActivity} label="Share Activity Feed" description="Let friends see your recent eco actions" />
-                    <ToggleSwitch icon={MapPin} enabled={locationTracking} onChange={setLocationTracking} label="Location Services" description="Used for nearby nurseries and activity logging" />
+                    <ToggleSwitch icon={Eye} enabled={settings.publicProfile} onChange={(v) => updateSetting('publicProfile', v)} label="Public Profile" description="Allow others to see your profile and stats" />
+                    <ToggleSwitch icon={Globe} enabled={settings.showOnLeaderboard} onChange={(v) => updateSetting('showOnLeaderboard', v)} label="Show on Leaderboard" description="Appear in public leaderboard rankings" />
+                    <ToggleSwitch icon={Globe} enabled={settings.shareActivity} onChange={(v) => updateSetting('shareActivity', v)} label="Share Activity Feed" description="Let friends see your recent eco actions" />
+                    <ToggleSwitch icon={MapPin} enabled={settings.locationServices} onChange={(v) => updateSetting('locationServices', v)} label="Location Services" description="Used for nearby nurseries and activity logging" />
                 </CardContent>
             </Card>
 
@@ -117,8 +178,8 @@ export default function SettingsPage() {
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="divide-y divide-border">
-                    <ToggleSwitch icon={Eye} enabled={autoDetect} onChange={setAutoDetect} label="Auto-Detect Products" description="Automatically scan shopping pages for eco swap suggestions" />
-                    <ToggleSwitch icon={Bell} enabled={showPopup} onChange={setShowPopup} label="Show Swap Popup" description="Display a popup when an eco-friendly alternative is found" />
+                    <ToggleSwitch icon={Eye} enabled={settings.autoDetectProducts} onChange={(v) => updateSetting('autoDetectProducts', v)} label="Auto-Detect Products" description="Automatically scan shopping pages for eco swap suggestions" />
+                    <ToggleSwitch icon={Bell} enabled={settings.showSwapPopup} onChange={(v) => updateSetting('showSwapPopup', v)} label="Show Swap Popup" description="Display a popup when an eco-friendly alternative is found" />
                 </CardContent>
             </Card>
 

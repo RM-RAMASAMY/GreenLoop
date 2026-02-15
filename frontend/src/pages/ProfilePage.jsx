@@ -1,32 +1,74 @@
-import React from 'react';
-import { User, MapPin, Calendar, Award, TrendingUp, Clock, Leaf } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { User, MapPin, Calendar, Award, TrendingUp, Clock, Leaf, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 
-const ProfilePage = () => {
-    // Mock user data
-    const user = {
-        name: "EcoWarrior",
-        email: "eco.warrior@example.com",
-        joinDate: "Jan 2024",
-        avatar: null,
-        location: "San Francisco, CA",
-        stats: {
-            totalImpact: "1,250 kg CO2",
-            activitiesLogged: 42,
-            localRank: 5,
-            level: "Guardian of the Grove"
-        },
-        achievements: [
-            { id: 1, name: "Early Bird", icon: <Clock size={20} />, description: "Logged an activity before 6 AM" },
-            { id: 2, name: "Tree Hugger", icon: <Leaf size={20} />, description: "Visited 10 protected trees" },
-            { id: 3, name: "Data Contributor", icon: <TrendingUp size={20} />, description: "Logged 50 data points" }
-        ],
-        recentActivity: [
-            { id: 101, type: "Tree Log", location: "Golden Gate Park", date: "2 days ago", points: +50 },
-            { id: 102, type: "Cleanup", location: "Ocean Beach", date: "5 days ago", points: +120 },
-            { id: 103, type: "Observation", location: "Twin Peaks", date: "1 week ago", points: +30 }
-        ]
+const API_URL = 'http://localhost:3001';
+
+const ProfilePage = ({ token, user: appUser }) => {
+    const [profile, setProfile] = useState(null);
+    const [recentActions, setRecentActions] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (!token) {
+            setLoading(false);
+            return;
+        }
+
+        Promise.all([
+            fetch(`${API_URL}/api/user/me`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+            fetch(`${API_URL}/api/actions?limit=10`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+        ])
+            .then(([userData, actions]) => {
+                setProfile(userData);
+                if (Array.isArray(actions)) setRecentActions(actions);
+                setLoading(false);
+            })
+            .catch(() => setLoading(false));
+    }, [token]);
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center p-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+        );
+    }
+
+    const displayUser = profile || appUser || { name: 'EcoWarrior', email: 'demo@greenloop.app' };
+    const displayName = displayUser.name || 'EcoWarrior';
+    const initials = displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    const joinDate = displayUser.createdAt
+        ? new Date(displayUser.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+        : 'Jan 2026';
+
+    // Derive achievements from actions
+    const achievements = [];
+    if (recentActions.length >= 1) achievements.push({ id: 1, name: 'First Step', icon: <Leaf size={20} />, description: 'Logged your first eco activity' });
+    if (recentActions.length >= 5) achievements.push({ id: 2, name: 'Getting Started', icon: <TrendingUp size={20} />, description: 'Logged 5 activities' });
+    if (recentActions.some(a => a.actionType === 'PLANT')) achievements.push({ id: 3, name: 'Tree Hugger', icon: <Leaf size={20} />, description: 'Planted a tree' });
+    if (recentActions.some(a => a.actionType === 'CLEANUP')) achievements.push({ id: 4, name: 'Clean Sweep', icon: <Clock size={20} />, description: 'Participated in a cleanup' });
+    if ((displayUser.totalXP || 0) >= 500) achievements.push({ id: 5, name: 'Rising Star', icon: <Award size={20} />, description: 'Earned 500+ XP' });
+
+    const timeAgo = (date) => {
+        const diff = Date.now() - new Date(date).getTime();
+        const mins = Math.floor(diff / 60000);
+        if (mins < 60) return `${mins}m ago`;
+        const hours = Math.floor(mins / 60);
+        if (hours < 24) return `${hours}h ago`;
+        const days = Math.floor(hours / 24);
+        return `${days}d ago`;
+    };
+
+    const actionLabels = {
+        PLANT: 'Tree Planting', SWAP: 'Eco Swap', WALK: 'Green Commute',
+        REFILL: 'Water Refill', COMPOST: 'Composting', CLEANUP: 'Cleanup',
+        OBSERVE: 'Observation', OTHER: 'Activity'
+    };
+
+    const actionXP = {
+        PLANT: 50, SWAP: 100, WALK: 30, REFILL: 10, COMPOST: 20, CLEANUP: 40, OBSERVE: 15
     };
 
     return (
@@ -34,14 +76,18 @@ const ProfilePage = () => {
             {/* Header Section */}
             <Card className="border-none shadow-md">
                 <CardContent className="p-8 flex flex-col md:flex-row items-center gap-8">
-                    <div className="w-24 h-24 rounded-full bg-slate-200 flex items-center justify-center shrink-0">
-                        <User size={48} className="text-slate-400" />
-                    </div>
+                    {displayUser.avatar ? (
+                        <img src={displayUser.avatar} alt={displayName} className="w-24 h-24 rounded-full object-cover shadow-lg" />
+                    ) : (
+                        <div className="w-24 h-24 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white text-2xl font-bold shadow-lg">
+                            {initials}
+                        </div>
+                    )}
                     <div className="text-center md:text-left">
-                        <h1 className="text-3xl font-bold text-foreground mb-2">{user.name}</h1>
+                        <h1 className="text-3xl font-bold text-foreground mb-2">{displayName}</h1>
                         <div className="flex flex-wrap justify-center md:justify-start gap-4 text-muted-foreground">
-                            <span className="flex items-center gap-1"><MapPin size={16} /> {user.location}</span>
-                            <span className="flex items-center gap-1"><Calendar size={16} /> Joined {user.joinDate}</span>
+                            <span className="flex items-center gap-1"><MapPin size={16} /> San Francisco, CA</span>
+                            <span className="flex items-center gap-1"><Calendar size={16} /> Joined {joinDate}</span>
                         </div>
                     </div>
                 </CardContent>
@@ -49,10 +95,10 @@ const ProfilePage = () => {
 
             {/* Stats Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard title="Total Impact" value={user.stats.totalImpact} icon={<Leaf size={24} className="text-emerald-500" />} />
-                <StatCard title="Activities" value={user.stats.activitiesLogged} icon={<TrendingUp size={24} className="text-blue-500" />} />
-                <StatCard title="Local Rank" value={`#${user.stats.localRank}`} icon={<Award size={24} className="text-amber-500" />} />
-                <StatCard title="Current Level" value={user.stats.level} icon={<User size={24} className="text-purple-500" />} />
+                <StatCard title="Total XP" value={(displayUser.totalXP || 0).toLocaleString()} icon={<Leaf size={24} className="text-emerald-500" />} />
+                <StatCard title="Activities" value={recentActions.length} icon={<TrendingUp size={24} className="text-blue-500" />} />
+                <StatCard title="Streak" value={`${displayUser.streak || 0} days`} icon={<Award size={24} className="text-amber-500" />} />
+                <StatCard title="Current Level" value={displayUser.level || 'Seed'} icon={<User size={24} className="text-purple-500" />} />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -62,19 +108,28 @@ const ProfilePage = () => {
                         <CardTitle>Recent Activity</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="space-y-4">
-                            {user.recentActivity.map(activity => (
-                                <div key={activity.id} className="flex justify-between items-center p-4 border-b last:border-0 hover:bg-muted/50 transition-colors">
-                                    <div>
-                                        <div className="font-semibold text-foreground">{activity.type}</div>
-                                        <div className="text-sm text-muted-foreground">{activity.location} • {activity.date}</div>
+                        {recentActions.length === 0 ? (
+                            <div className="text-center py-8 text-muted-foreground">
+                                <Leaf className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                                <p>No activities yet. Start logging!</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {recentActions.map(action => (
+                                    <div key={action._id} className="flex justify-between items-center p-4 border-b last:border-0 hover:bg-muted/50 transition-colors">
+                                        <div>
+                                            <div className="font-semibold text-foreground">{actionLabels[action.actionType] || action.actionType}</div>
+                                            <div className="text-sm text-muted-foreground">
+                                                {action.details?.description || action.details?.plantName || 'Eco activity'} • {timeAgo(action.createdAt)}
+                                            </div>
+                                        </div>
+                                        <Badge variant="secondary" className="bg-emerald-100 text-emerald-800">
+                                            +{action.xpGained || actionXP[action.actionType] || 5} pts
+                                        </Badge>
                                     </div>
-                                    <Badge variant="secondary" className="bg-emerald-100 text-emerald-800">
-                                        +{activity.points} pts
-                                    </Badge>
-                                </div>
-                            ))}
-                        </div>
+                                ))}
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
 
@@ -84,19 +139,26 @@ const ProfilePage = () => {
                         <CardTitle>Achievements</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="space-y-4">
-                            {user.achievements.map(achievement => (
-                                <div key={achievement.id} className="flex items-start gap-4 p-2 rounded-lg hover:bg-muted/50 transition-colors">
-                                    <div className="p-2 bg-amber-100 rounded-lg shrink-0 text-amber-600">
-                                        {achievement.icon}
+                        {achievements.length === 0 ? (
+                            <div className="text-center py-8 text-muted-foreground">
+                                <Award className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                                <p className="text-sm">Log activities to earn achievements!</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {achievements.map(achievement => (
+                                    <div key={achievement.id} className="flex items-start gap-4 p-2 rounded-lg hover:bg-muted/50 transition-colors">
+                                        <div className="p-2 bg-amber-100 rounded-lg shrink-0 text-amber-600">
+                                            {achievement.icon}
+                                        </div>
+                                        <div>
+                                            <div className="font-semibold text-sm text-foreground">{achievement.name}</div>
+                                            <div className="text-xs text-muted-foreground">{achievement.description}</div>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <div className="font-semibold text-sm text-foreground">{achievement.name}</div>
-                                        <div className="text-xs text-muted-foreground">{achievement.description}</div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                                ))}
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             </div>

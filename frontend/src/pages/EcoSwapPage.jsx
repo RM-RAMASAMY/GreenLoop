@@ -1,26 +1,14 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     ArrowRightLeft, TrendingUp, Leaf, Package, ShoppingBag,
     Droplets, ChefHat, Sparkles, Trophy, Target,
-    ArrowRight, Chrome, ExternalLink, Filter
+    ArrowRight, Chrome, ExternalLink, Filter, Loader2
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 
-// ---- Mock swap history (simulates data from Chrome extension) ----
-const SWAP_HISTORY = [
-    { id: 1, original: 'Plastic Water Bottle', swap: 'Stainless Steel Bottle', category: 'Hydration', ecoScoreBefore: 10, ecoScoreAfter: 95, xp: 100, date: '2026-02-14', co2Saved: 0.8, plasticSaved: 42 },
-    { id: 2, original: 'Head & Shoulders Shampoo', swap: 'Ethique Shampoo Bar', category: 'Personal Care', ecoScoreBefore: 30, ecoScoreAfter: 98, xp: 100, date: '2026-02-13', co2Saved: 1.2, plasticSaved: 85 },
-    { id: 3, original: 'Plastic Toothbrush', swap: 'Bamboo Toothbrush', category: 'Personal Care', ecoScoreBefore: 20, ecoScoreAfter: 99, xp: 100, date: '2026-02-12', co2Saved: 0.3, plasticSaved: 14 },
-    { id: 4, original: 'Plastic Straws', swap: 'Stainless Steel Straws', category: 'Kitchen', ecoScoreBefore: 5, ecoScoreAfter: 95, xp: 100, date: '2026-02-11', co2Saved: 0.5, plasticSaved: 30 },
-    { id: 5, original: 'Plastic Grocery Bag', swap: 'Organic Cotton Tote', category: 'Shopping', ecoScoreBefore: 10, ecoScoreAfter: 92, xp: 100, date: '2026-02-10', co2Saved: 3.5, plasticSaved: 120 },
-    { id: 6, original: 'Plastic Cutlery', swap: 'Bamboo Travel Cutlery', category: 'Kitchen', ecoScoreBefore: 15, ecoScoreAfter: 97, xp: 100, date: '2026-02-09', co2Saved: 0.4, plasticSaved: 25 },
-    { id: 7, original: 'Disposable Coffee Cup', swap: 'Reusable Bamboo Cup', category: 'Hydration', ecoScoreBefore: 12, ecoScoreAfter: 94, xp: 100, date: '2026-02-08', co2Saved: 1.1, plasticSaved: 35 },
-    { id: 8, original: 'Cling Wrap', swap: 'Beeswax Wraps', category: 'Kitchen', ecoScoreBefore: 8, ecoScoreAfter: 90, xp: 100, date: '2026-02-07', co2Saved: 0.6, plasticSaved: 50 },
-    { id: 9, original: 'Plastic Water Bottle', swap: 'Stainless Steel Bottle', category: 'Hydration', ecoScoreBefore: 10, ecoScoreAfter: 95, xp: 100, date: '2026-02-06', co2Saved: 0.8, plasticSaved: 42 },
-    { id: 10, original: 'Body Wash (Plastic)', swap: 'Bar Soap (Package-Free)', category: 'Personal Care', ecoScoreBefore: 25, ecoScoreAfter: 96, xp: 100, date: '2026-02-05', co2Saved: 0.9, plasticSaved: 65 },
-];
+const API_URL = 'http://localhost:3001';
 
 const CATEGORIES = ['All', 'Hydration', 'Personal Care', 'Kitchen', 'Shopping'];
 
@@ -38,38 +26,63 @@ const CATEGORY_COLORS = {
     Shopping: { bg: 'bg-pink-100', text: 'text-pink-700', bar: 'bg-pink-500' },
 };
 
-export default function EcoSwapPage() {
+export default function EcoSwapPage({ token }) {
+    const [swaps, setSwaps] = useState([]);
+    const [loading, setLoading] = useState(true);
     const [activeFilter, setActiveFilter] = useState('All');
+
+    useEffect(() => {
+        if (!token) { setLoading(false); return; }
+        fetch(`${API_URL}/api/swaps`, {
+            headers: { Authorization: `Bearer ${token}` }
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (Array.isArray(data)) setSwaps(data);
+                setLoading(false);
+            })
+            .catch(() => setLoading(false));
+    }, [token]);
 
     const filteredSwaps = useMemo(() =>
         activeFilter === 'All'
-            ? SWAP_HISTORY
-            : SWAP_HISTORY.filter(s => s.category === activeFilter),
-        [activeFilter]
+            ? swaps
+            : swaps.filter(s => s.category === activeFilter),
+        [activeFilter, swaps]
     );
 
     // Computed stats
-    const totalSwaps = SWAP_HISTORY.length;
-    const totalXP = SWAP_HISTORY.reduce((sum, s) => sum + s.xp, 0);
-    const totalCO2 = SWAP_HISTORY.reduce((sum, s) => sum + s.co2Saved, 0).toFixed(1);
-    const totalPlastic = SWAP_HISTORY.reduce((sum, s) => sum + s.plasticSaved, 0);
-    const avgEcoImprovement = Math.round(
-        SWAP_HISTORY.reduce((sum, s) => sum + (s.ecoScoreAfter - s.ecoScoreBefore), 0) / totalSwaps
-    );
+    const totalSwaps = swaps.length;
+    const totalXP = swaps.reduce((sum, s) => sum + (s.xp || 0), 0);
+    const totalCO2 = swaps.reduce((sum, s) => sum + (s.co2Saved || 0), 0).toFixed(1);
+    const totalPlastic = swaps.reduce((sum, s) => sum + (s.plasticSaved || 0), 0);
+    const avgEcoImprovement = totalSwaps > 0 ? Math.round(
+        swaps.reduce((sum, s) => sum + ((s.ecoScoreAfter || 0) - (s.ecoScoreBefore || 0)), 0) / totalSwaps
+    ) : 0;
 
     // Category breakdown
     const categoryStats = useMemo(() => {
         const stats = {};
-        SWAP_HISTORY.forEach(s => {
+        swaps.forEach(s => {
             if (!stats[s.category]) stats[s.category] = { count: 0, co2: 0, plastic: 0 };
             stats[s.category].count++;
-            stats[s.category].co2 += s.co2Saved;
-            stats[s.category].plastic += s.plasticSaved;
+            stats[s.category].co2 += s.co2Saved || 0;
+            stats[s.category].plastic += s.plasticSaved || 0;
         });
         return stats;
-    }, []);
+    }, [swaps]);
 
-    const maxCategoryCount = Math.max(...Object.values(categoryStats).map(s => s.count));
+    const maxCategoryCount = Object.keys(categoryStats).length > 0
+        ? Math.max(...Object.values(categoryStats).map(s => s.count))
+        : 1;
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center p-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-8">
@@ -146,29 +159,33 @@ export default function EcoSwapPage() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                        {Object.entries(categoryStats).map(([cat, stats]) => {
-                            const colors = CATEGORY_COLORS[cat] || { bg: 'bg-gray-100', text: 'text-gray-700', bar: 'bg-gray-500' };
-                            const Icon = CATEGORY_ICONS[cat] || Package;
-                            return (
-                                <div key={cat} className="space-y-1.5">
-                                    <div className="flex items-center justify-between text-sm">
-                                        <div className="flex items-center gap-2">
-                                            <div className={`p-1 rounded ${colors.bg}`}>
-                                                <Icon size={14} className={colors.text} />
+                        {Object.keys(categoryStats).length === 0 ? (
+                            <p className="text-sm text-muted-foreground text-center py-4">No swaps yet. Install the Chrome Extension to get started!</p>
+                        ) : (
+                            Object.entries(categoryStats).map(([cat, stats]) => {
+                                const colors = CATEGORY_COLORS[cat] || { bg: 'bg-gray-100', text: 'text-gray-700', bar: 'bg-gray-500' };
+                                const Icon = CATEGORY_ICONS[cat] || Package;
+                                return (
+                                    <div key={cat} className="space-y-1.5">
+                                        <div className="flex items-center justify-between text-sm">
+                                            <div className="flex items-center gap-2">
+                                                <div className={`p-1 rounded ${colors.bg}`}>
+                                                    <Icon size={14} className={colors.text} />
+                                                </div>
+                                                <span className="font-medium">{cat}</span>
                                             </div>
-                                            <span className="font-medium">{cat}</span>
+                                            <span className="text-muted-foreground">{stats.count} swaps</span>
                                         </div>
-                                        <span className="text-muted-foreground">{stats.count} swaps</span>
+                                        <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+                                            <div
+                                                className={`h-full ${colors.bar} rounded-full transition-all duration-700`}
+                                                style={{ width: `${(stats.count / maxCategoryCount) * 100}%` }}
+                                            />
+                                        </div>
                                     </div>
-                                    <div className="h-2.5 bg-muted rounded-full overflow-hidden">
-                                        <div
-                                            className={`h-full ${colors.bar} rounded-full transition-all duration-700`}
-                                            style={{ width: `${(stats.count / maxCategoryCount) * 100}%` }}
-                                        />
-                                    </div>
-                                </div>
-                            );
-                        })}
+                                );
+                            })
+                        )}
                     </CardContent>
                 </Card>
 
@@ -179,20 +196,24 @@ export default function EcoSwapPage() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-5">
-                        <div className="grid grid-cols-2 gap-4">
-                            {Object.entries(categoryStats).map(([cat, stats]) => {
-                                const colors = CATEGORY_COLORS[cat] || { bg: 'bg-gray-100', text: 'text-gray-700' };
-                                return (
-                                    <div key={cat} className={`${colors.bg} rounded-xl p-4`}>
-                                        <div className={`text-xs font-semibold ${colors.text} mb-1`}>{cat}</div>
-                                        <div className="text-lg font-bold">{stats.co2.toFixed(1)} kg</div>
-                                        <div className="text-xs text-muted-foreground">CO₂ saved</div>
-                                        <div className="text-sm font-semibold mt-1">{stats.plastic}g</div>
-                                        <div className="text-xs text-muted-foreground">plastic avoided</div>
-                                    </div>
-                                );
-                            })}
-                        </div>
+                        {Object.keys(categoryStats).length === 0 ? (
+                            <p className="text-sm text-muted-foreground text-center py-4">Start swapping to see your impact!</p>
+                        ) : (
+                            <div className="grid grid-cols-2 gap-4">
+                                {Object.entries(categoryStats).map(([cat, stats]) => {
+                                    const colors = CATEGORY_COLORS[cat] || { bg: 'bg-gray-100', text: 'text-gray-700' };
+                                    return (
+                                        <div key={cat} className={`${colors.bg} rounded-xl p-4`}>
+                                            <div className={`text-xs font-semibold ${colors.text} mb-1`}>{cat}</div>
+                                            <div className="text-lg font-bold">{stats.co2.toFixed(1)} kg</div>
+                                            <div className="text-xs text-muted-foreground">CO₂ saved</div>
+                                            <div className="text-sm font-semibold mt-1">{stats.plastic}g</div>
+                                            <div className="text-xs text-muted-foreground">plastic avoided</div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             </div>
@@ -210,8 +231,8 @@ export default function EcoSwapPage() {
                                     key={cat}
                                     onClick={() => setActiveFilter(cat)}
                                     className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${activeFilter === cat
-                                            ? 'bg-emerald-600 text-white shadow-md'
-                                            : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                                        ? 'bg-emerald-600 text-white shadow-md'
+                                        : 'bg-muted text-muted-foreground hover:bg-muted/80'
                                         }`}
                                 >
                                     {cat}
@@ -221,51 +242,51 @@ export default function EcoSwapPage() {
                     </div>
                 </CardHeader>
                 <CardContent className="p-0">
-                    <div className="divide-y divide-border">
-                        {filteredSwaps.map(swap => {
-                            const colors = CATEGORY_COLORS[swap.category] || { bg: 'bg-gray-100', text: 'text-gray-700' };
-                            const Icon = CATEGORY_ICONS[swap.category] || Package;
-                            const improvement = swap.ecoScoreAfter - swap.ecoScoreBefore;
-
-                            return (
-                                <div key={swap.id} className="flex items-center gap-4 px-6 py-4 hover:bg-muted/30 transition-colors">
-                                    {/* Icon */}
-                                    <div className={`p-2.5 rounded-xl ${colors.bg} flex-shrink-0`}>
-                                        <Icon size={20} className={colors.text} />
-                                    </div>
-
-                                    {/* Swap Details */}
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 mb-0.5">
-                                            <span className="text-sm text-muted-foreground line-through truncate">{swap.original}</span>
-                                            <ArrowRight size={12} className="text-emerald-500 flex-shrink-0" />
-                                            <span className="font-semibold text-sm truncate">{swap.swap}</span>
+                    {filteredSwaps.length === 0 ? (
+                        <div className="text-center p-12 text-muted-foreground">
+                            <ArrowRightLeft className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                            <p>No swaps recorded yet.</p>
+                        </div>
+                    ) : (
+                        <div className="divide-y divide-border">
+                            {filteredSwaps.map(swap => {
+                                const colors = CATEGORY_COLORS[swap.category] || { bg: 'bg-gray-100', text: 'text-gray-700' };
+                                const Icon = CATEGORY_ICONS[swap.category] || Package;
+                                return (
+                                    <div key={swap._id} className="flex items-center gap-4 px-6 py-4 hover:bg-muted/30 transition-colors">
+                                        <div className={`p-2.5 rounded-xl ${colors.bg} flex-shrink-0`}>
+                                            <Icon size={20} className={colors.text} />
                                         </div>
-                                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                                            <span>{new Date(swap.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                                            <span>•</span>
-                                            <Badge className={`text-xs ${colors.bg} ${colors.text}`}>{swap.category}</Badge>
-                                        </div>
-                                    </div>
-
-                                    {/* Eco Score Progress */}
-                                    <div className="flex-shrink-0 flex items-center gap-3">
-                                        <div className="text-right">
-                                            <div className="flex items-center gap-1">
-                                                <span className="text-xs text-red-400 font-mono">{swap.ecoScoreBefore}</span>
-                                                <ArrowRight size={10} className="text-muted-foreground" />
-                                                <span className="text-sm font-bold text-emerald-600 font-mono">{swap.ecoScoreAfter}</span>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2 mb-0.5">
+                                                <span className="text-sm text-muted-foreground line-through truncate">{swap.original}</span>
+                                                <ArrowRight size={12} className="text-emerald-500 flex-shrink-0" />
+                                                <span className="font-semibold text-sm truncate">{swap.swap}</span>
                                             </div>
-                                            <div className="text-xs text-muted-foreground">eco score</div>
+                                            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                                <span>{new Date(swap.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                                <span>•</span>
+                                                <Badge className={`text-xs ${colors.bg} ${colors.text}`}>{swap.category}</Badge>
+                                            </div>
                                         </div>
-                                        <Badge className="bg-emerald-100 text-emerald-700 text-xs font-bold">
-                                            +{swap.xp} XP
-                                        </Badge>
+                                        <div className="flex-shrink-0 flex items-center gap-3">
+                                            <div className="text-right">
+                                                <div className="flex items-center gap-1">
+                                                    <span className="text-xs text-red-400 font-mono">{swap.ecoScoreBefore}</span>
+                                                    <ArrowRight size={10} className="text-muted-foreground" />
+                                                    <span className="text-sm font-bold text-emerald-600 font-mono">{swap.ecoScoreAfter}</span>
+                                                </div>
+                                                <div className="text-xs text-muted-foreground">eco score</div>
+                                            </div>
+                                            <Badge className="bg-emerald-100 text-emerald-700 text-xs font-bold">
+                                                +{swap.xp || 100} XP
+                                            </Badge>
+                                        </div>
                                     </div>
-                                </div>
-                            );
-                        })}
-                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </CardContent>
             </Card>
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { Camera, Upload, CheckCircle, MapPin, Clock, Flame, TreePine, Bike, Recycle, Droplets, ShoppingBag, Sun, ChevronDown, X, Plus, Award, LocateFixed, Loader2 } from 'lucide-react';
+import { Camera, Upload, CheckCircle, MapPin, Clock, Flame, TreePine, Bike, Recycle, Droplets, ShoppingBag, Sun, ChevronDown, X, Plus, Award, LocateFixed, Loader2, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
@@ -15,13 +15,6 @@ const ACTIVITY_TYPES = [
     { id: 'energy', label: 'Save Energy', emoji: '☀️', xp: 20, color: 'yellow', icon: Sun, desc: 'Reduce energy consumption' },
 ];
 
-const MOCK_HISTORY = [
-    { id: 1, type: 'plant', label: 'Plant a Tree', desc: 'Planted an oak sapling at Civic Center', xp: 50, time: '2 hours ago', status: 'verified' },
-    { id: 2, type: 'commute', label: 'Green Commute', desc: 'Biked to work — 4.2 km', xp: 30, time: '5 hours ago', status: 'verified' },
-    { id: 3, type: 'recycle', label: 'Recycle', desc: 'Sorted 3 bags of recyclables', xp: 10, time: 'Yesterday', status: 'verified' },
-    { id: 4, type: 'water', label: 'Save Water', desc: 'Installed low-flow shower head', xp: 15, time: 'Yesterday', status: 'pending' },
-    { id: 5, type: 'reusable', label: 'Use Reusable', desc: 'Brought my own cup to coffee shop', xp: 10, time: '2 days ago', status: 'verified' },
-];
 
 const colorMap = {
     emerald: { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-300', ring: 'ring-emerald-400' },
@@ -32,7 +25,9 @@ const colorMap = {
     yellow: { bg: 'bg-yellow-100', text: 'text-yellow-700', border: 'border-yellow-300', ring: 'ring-yellow-400' },
 };
 
-export default function CameraPage() {
+const API_URL = 'http://localhost:3001';
+
+export default function CameraPage({ token }) {
     const [file, setFile] = useState(null);
     const [preview, setPreview] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -41,7 +36,30 @@ export default function CameraPage() {
     const [submitted, setSubmitted] = useState(false);
     const [location, setLocation] = useState({ lat: '', lng: '' });
     const [locating, setLocating] = useState(false);
-    const navigate = useNavigate();
+    const [history, setHistory] = useState([]);
+    const [refreshing, setRefreshing] = useState(false);
+
+    // Plant-specific states
+    const [plantName, setPlantName] = useState('');
+    const [plantType, setPlantType] = useState('tree');
+    const [plantTitle, setPlantTitle] = useState('');
+
+    // Fetch real activity history
+    const refreshHistory = () => {
+        if (!token) return;
+        setRefreshing(true);
+        fetch(`${API_URL}/api/actions?limit=5`, {
+            headers: { Authorization: `Bearer ${token}` }
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (Array.isArray(data)) setHistory(data);
+                setRefreshing(false);
+            })
+            .catch(() => setRefreshing(false));
+    };
+
+    useEffect(() => { refreshHistory(); }, [token]);
 
     // Fetch current GPS location on demand
     const fetchCurrentLocation = () => {
@@ -72,19 +90,31 @@ export default function CameraPage() {
         setLoading(true);
 
         try {
-            if (location.lat && location.lng) {
+            // Post to real backend with auth
+            const actionMap = { plant: 'PLANT', commute: 'WALK', recycle: 'COMPOST', water: 'REFILL', reusable: 'SWAP', energy: 'OTHER' };
+            if (token) {
                 try {
-                    await axios.post('http://localhost:3001/api/action', {
-                        userId: 'user1',
-                        actionType: selectedType.id.toUpperCase(),
-                        details: {
-                            plantName: selectedType.label,
-                            description,
-                            location: { lat: parseFloat(location.lat), lng: parseFloat(location.lng) }
-                        }
+                    await fetch(`${API_URL}/api/action`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            actionType: actionMap[selectedType.id] || 'OTHER',
+                            details: {
+                                plantName: selectedType.id === 'plant' ? plantName : selectedType.label,
+                                plantType: selectedType.id === 'plant' ? plantType : null,
+                                title: selectedType.id === 'plant' ? plantTitle : null,
+                                description,
+                                location: location.lat && location.lng
+                                    ? { lat: parseFloat(location.lat), lng: parseFloat(location.lng) }
+                                    : null
+                            }
+                        })
                     });
                 } catch (apiErr) {
-                    console.error("API Error, proceeding with mock", apiErr);
+                    console.error('API Error:', apiErr);
                 }
             }
 
@@ -95,8 +125,12 @@ export default function CameraPage() {
                 setPreview(null);
                 setSelectedType(null);
                 setDescription('');
+                setPlantName('');
+                setPlantType('tree');
+                setPlantTitle('');
                 setLocation({ lat: '', lng: '' });
                 setLoading(false);
+                refreshHistory(); // Auto-refresh after submit
             }, 2500);
         } catch (err) {
             console.error(err);
@@ -104,10 +138,10 @@ export default function CameraPage() {
         }
     };
 
-    // Stats
-    const todayXP = 90;
-    const streak = 7;
-    const totalLogs = 42;
+    // Stats from real history
+    const todayXP = history.reduce((sum, a) => sum + (a.xpGained || 0), 0);
+    const streak = 0; // Could be calculated from consecutive days
+    const totalLogs = history.length;
 
     return (
         <div className="max-w-3xl mx-auto space-y-8">
@@ -189,7 +223,13 @@ export default function CameraPage() {
                                     return (
                                         <button
                                             key={type.id}
-                                            onClick={() => setSelectedType(type)}
+                                            onClick={() => {
+                                                setSelectedType(type);
+                                                // Proactively fetch location if planting
+                                                if (type.id === 'plant' && !location.lat) {
+                                                    fetchCurrentLocation();
+                                                }
+                                            }}
                                             className={`p-4 rounded-xl border-2 text-left transition-all duration-200 hover:scale-[1.02] ${isSelected
                                                 ? `${colors.bg} ${colors.border} ${colors.text} ring-2 ${colors.ring} shadow-md`
                                                 : 'border-border bg-card hover:bg-muted/50'
@@ -222,9 +262,53 @@ export default function CameraPage() {
                                         value={description}
                                         onChange={(e) => setDescription(e.target.value)}
                                         placeholder={`Describe your ${selectedType.label.toLowerCase()} activity...`}
-                                        className="w-full border border-input bg-background rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[100px] resize-none transition-all"
+                                        className="w-full border border-input bg-background rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] resize-none transition-all"
                                     />
                                 </div>
+
+                                {selectedType.id === 'plant' && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="text-xs font-bold text-muted-foreground uppercase mb-1 block">
+                                                Plant Name / Species
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={plantName}
+                                                onChange={(e) => setPlantName(e.target.value)}
+                                                placeholder="e.g. Coast Live Oak"
+                                                className="w-full border border-input bg-background rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-muted-foreground uppercase mb-1 block">
+                                                Plant Category
+                                            </label>
+                                            <select
+                                                value={plantType}
+                                                onChange={(e) => setPlantType(e.target.value)}
+                                                className="w-full border border-input bg-background rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                                            >
+                                                <option value="tree">Tree</option>
+                                                <option value="flower">Flower</option>
+                                                <option value="bush">Bush</option>
+                                                <option value="fern">Fern</option>
+                                            </select>
+                                        </div>
+                                        <div className="md:col-span-2">
+                                            <label className="text-xs font-bold text-muted-foreground uppercase mb-1 block">
+                                                Location Title (e.g. Park Name)
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={plantTitle}
+                                                onChange={(e) => setPlantTitle(e.target.value)}
+                                                placeholder="e.g. Golden Gate Park"
+                                                className="w-full border border-input bg-background rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Location Input */}
                                 <div>
@@ -266,12 +350,17 @@ export default function CameraPage() {
                                             )}
                                         </Button>
                                     </div>
-                                    {location.lat && location.lng && (
+                                    {location.lat && location.lng ? (
                                         <div className="flex items-center gap-1.5 mt-2 text-xs text-emerald-600">
                                             <MapPin size={12} />
                                             <span>Location set: {location.lat}, {location.lng}</span>
                                         </div>
-                                    )}
+                                    ) : selectedType.id === 'plant' ? (
+                                        <div className="flex items-center gap-1.5 mt-2 text-xs text-amber-600 animate-pulse font-medium">
+                                            <MapPin size={12} />
+                                            <span>Note: Without location, this won't show on the global map!</span>
+                                        </div>
+                                    ) : null}
                                 </div>
 
                                 {/* Step 3: Attach Photo (Optional) */}
@@ -337,39 +426,61 @@ export default function CameraPage() {
             {/* Recent Activity Log */}
             <Card>
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <Clock size={20} /> Recent Activity
-                    </CardTitle>
+                    <div className="flex items-center justify-between">
+                        <CardTitle className="flex items-center gap-2">
+                            <Clock size={20} /> Recent Activity
+                        </CardTitle>
+                        <button
+                            onClick={refreshHistory}
+                            className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                            title="Refresh"
+                        >
+                            <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+                        </button>
+                    </div>
                 </CardHeader>
                 <CardContent className="p-0">
-                    <div className="divide-y divide-border">
-                        {MOCK_HISTORY.map(item => {
-                            const actType = ACTIVITY_TYPES.find(t => t.id === item.type);
-                            const colors = actType ? colorMap[actType.color] : colorMap.emerald;
-                            return (
-                                <div key={item.id} className="flex items-center gap-4 px-6 py-4 hover:bg-muted/30 transition-colors">
-                                    <div className={`p-2 rounded-full ${colors.bg}`}>
-                                        <span className="text-lg">{actType?.emoji || '🌿'}</span>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="font-semibold text-sm truncate">{item.label}</div>
-                                        <div className="text-xs text-muted-foreground truncate">{item.desc}</div>
-                                    </div>
-                                    <div className="text-right flex-shrink-0">
-                                        <div className="font-bold text-emerald-600 text-sm">+{item.xp} XP</div>
-                                        <div className="text-xs text-muted-foreground">{item.time}</div>
-                                    </div>
-                                    <div className="flex-shrink-0">
-                                        {item.status === 'verified' ? (
+                    {history.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                            <Clock className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                            <p className="text-sm">No activities logged yet. Start above!</p>
+                        </div>
+                    ) : (
+                        <div className="divide-y divide-border">
+                            {history.map(item => {
+                                const actionMap = { PLANT: 'plant', WALK: 'commute', COMPOST: 'recycle', REFILL: 'water', SWAP: 'reusable', OTHER: 'energy' };
+                                const typeId = actionMap[item.actionType] || 'plant';
+                                const actType = ACTIVITY_TYPES.find(t => t.id === typeId);
+                                const colors = actType ? colorMap[actType.color] : colorMap.emerald;
+                                const timeAgo = (date) => {
+                                    const diff = Date.now() - new Date(date).getTime();
+                                    const mins = Math.floor(diff / 60000);
+                                    if (mins < 60) return `${mins}m ago`;
+                                    const hours = Math.floor(mins / 60);
+                                    if (hours < 24) return `${hours}h ago`;
+                                    return `${Math.floor(hours / 24)}d ago`;
+                                };
+                                return (
+                                    <div key={item._id} className="flex items-center gap-4 px-6 py-4 hover:bg-muted/30 transition-colors">
+                                        <div className={`p-2 rounded-full ${colors.bg}`}>
+                                            <span className="text-lg">{actType?.emoji || '🌿'}</span>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="font-semibold text-sm truncate">{actType?.label || item.actionType}</div>
+                                            <div className="text-xs text-muted-foreground truncate">{item.details?.description || item.details?.plantName || 'Eco activity'}</div>
+                                        </div>
+                                        <div className="text-right flex-shrink-0">
+                                            <div className="font-bold text-emerald-600 text-sm">+{item.xpGained} XP</div>
+                                            <div className="text-xs text-muted-foreground">{timeAgo(item.createdAt)}</div>
+                                        </div>
+                                        <div className="flex-shrink-0">
                                             <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 text-xs">✓ Verified</Badge>
-                                        ) : (
-                                            <Badge variant="secondary" className="bg-amber-100 text-amber-800 text-xs">⏳ Pending</Badge>
-                                        )}
+                                        </div>
                                     </div>
-                                </div>
-                            );
-                        })}
-                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </CardContent>
             </Card>
         </div>
