@@ -1,0 +1,2 @@
+# Python dependencies for vector_bridge.py (Actian VectorAI DB client)
+actiancortex>=1.0.0

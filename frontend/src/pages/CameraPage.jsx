@@ -98,8 +98,29 @@ export default function CameraPage({ token }) {
         }
     };
 
+    // Computed validation flag
+    const canSubmit = selectedType && description.trim().length > 0 &&
+        (selectedType.id !== 'plant' || (plantName.trim().length > 0 && plantTitle.trim().length > 0));
+
     const handleSubmit = async () => {
         if (!selectedType) return;
+
+        // Validate required fields
+        if (!description.trim()) {
+            alert('Please add a description for your activity.');
+            return;
+        }
+        if (selectedType.id === 'plant') {
+            if (!plantName.trim()) {
+                alert('Please enter the plant name / species.');
+                return;
+            }
+            if (!plantTitle.trim()) {
+                alert('Please enter a location title (e.g. park name).');
+                return;
+            }
+        }
+
         setLoading(true);
 
         try {
@@ -306,29 +327,37 @@ export default function CameraPage({ token }) {
                             <>
                                 <div>
                                     <label className="text-sm font-bold text-muted-foreground uppercase tracking-wider mb-3 block">
-                                        2. Add Details
+                                        2. Add Details <span className="text-red-500">*</span>
                                     </label>
                                     <textarea
                                         value={description}
                                         onChange={(e) => setDescription(e.target.value)}
                                         placeholder={`Describe your ${selectedType.label.toLowerCase()} activity...`}
-                                        className="w-full border border-input bg-background rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] resize-none transition-all"
+                                        required
+                                        className={`w-full border bg-background rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] resize-none transition-all ${!description.trim() ? 'border-red-300' : 'border-input'}`}
                                     />
+                                    {!description.trim() && (
+                                        <p className="text-xs text-red-500 mt-1">Description is required.</p>
+                                    )}
                                 </div>
 
                                 {selectedType.id === 'plant' && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                             <label className="text-xs font-bold text-muted-foreground uppercase mb-1 block">
-                                                Plant Name / Species
+                                                Plant Name / Species <span className="text-red-500">*</span>
                                             </label>
                                             <input
                                                 type="text"
                                                 value={plantName}
                                                 onChange={(e) => setPlantName(e.target.value)}
                                                 placeholder="e.g. Coast Live Oak"
-                                                className="w-full border border-input bg-background rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                                                required
+                                                className={`w-full border bg-background rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all ${!plantName.trim() ? 'border-red-300' : 'border-input'}`}
                                             />
+                                            {!plantName.trim() && (
+                                                <p className="text-xs text-red-500 mt-1">Plant name is required.</p>
+                                            )}
                                         </div>
                                         <div>
                                             <label className="text-xs font-bold text-muted-foreground uppercase mb-1 block">
@@ -347,15 +376,19 @@ export default function CameraPage({ token }) {
                                         </div>
                                         <div className="md:col-span-2">
                                             <label className="text-xs font-bold text-muted-foreground uppercase mb-1 block">
-                                                Location Title (e.g. Park Name)
+                                                Location Title (e.g. Park Name) <span className="text-red-500">*</span>
                                             </label>
                                             <input
                                                 type="text"
                                                 value={plantTitle}
                                                 onChange={(e) => setPlantTitle(e.target.value)}
                                                 placeholder="e.g. Golden Gate Park"
-                                                className="w-full border border-input bg-background rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                                                required
+                                                className={`w-full border bg-background rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all ${!plantTitle.trim() ? 'border-red-300' : 'border-input'}`}
                                             />
+                                            {!plantTitle.trim() && (
+                                                <p className="text-xs text-red-500 mt-1">Location title is required.</p>
+                                            )}
                                         </div>
                                     </div>
                                 )}
@@ -455,7 +488,7 @@ export default function CameraPage({ token }) {
                                 {/* Submit */}
                                 <Button
                                     onClick={handleSubmit}
-                                    disabled={loading || !selectedType}
+                                    disabled={loading || !canSubmit}
                                     className="w-full h-12 text-base gap-2 shadow-lg hover:shadow-xl transition-all"
                                 >
                                     {loading ? (
