@@ -1,19 +1,20 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Map, { NavigationControl, Marker, Popup, Source, Layer, GeolocateControl } from 'react-map-gl/maplibre';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { Badge } from '../components/ui/Badge';
 import { Car, Footprints, Bike, X, Navigation, Loader2, RefreshCw } from 'lucide-react';
 const API_URL = 'http://localhost:3001';
 
-// Plant Marker Component with Custom Premium SVGs
-const PlantMarker = ({ type }) => {
+// Plant Marker Component with Custom Premium SVGs - Memoized to prevent re-renders on map pan
+const PlantMarker = React.memo(({ type }) => {
     switch (type) {
         case 'tree':
             return (
-                <div className="transform hover:scale-125 transition-transform duration-300 cursor-pointer drop-shadow-xl">
-                    <svg width="48" height="48" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <div className="hover:scale-125 transition-transform duration-200 cursor-pointer">
+                    <svg width="48" height="48" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-sm hover:drop-shadow-lg">
                         <path d="M25 45L25 35" stroke="#5D4037" strokeWidth="4" strokeLinecap="round" />
                         <circle cx="25" cy="25" r="18" fill="#10B981" stroke="#047857" strokeWidth="2" />
                         <circle cx="20" cy="20" r="5" fill="#34D399" fillOpacity="0.5" />
@@ -23,8 +24,8 @@ const PlantMarker = ({ type }) => {
             );
         case 'flower':
             return (
-                <div className="transform hover:scale-125 transition-transform duration-300 cursor-pointer drop-shadow-xl">
-                    <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <div className="hover:scale-125 transition-transform duration-200 cursor-pointer">
+                    <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-sm hover:drop-shadow-lg">
                         <path d="M20 40V30" stroke="#15803D" strokeWidth="3" strokeLinecap="round" />
                         <path d="M20 20L10 10C8 8 5 12 8 15L20 20Z" fill="#EC4899" stroke="#BE185D" strokeWidth="1" />
                         <path d="M20 20L30 10C32 8 35 12 32 15L20 20Z" fill="#EC4899" stroke="#BE185D" strokeWidth="1" />
@@ -36,8 +37,8 @@ const PlantMarker = ({ type }) => {
             );
         case 'bush':
             return (
-                <div className="transform hover:scale-125 transition-transform duration-300 cursor-pointer drop-shadow-xl">
-                    <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <div className="hover:scale-125 transition-transform duration-200 cursor-pointer">
+                    <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-sm hover:drop-shadow-lg">
                         <path d="M8 32C0 30 0 15 10 12C12 5 28 5 30 12C40 15 40 30 32 32H8Z" fill="#84CC16" stroke="#4D7C0F" strokeWidth="2" />
                         <path d="M12 25C12 25 15 20 20 25C25 30 28 25 28 25" stroke="#365314" strokeWidth="2" strokeLinecap="round" strokeOpacity="0.5" />
                     </svg>
@@ -46,8 +47,8 @@ const PlantMarker = ({ type }) => {
         case 'fern':
         default:
             return (
-                <div className="transform hover:scale-125 transition-transform duration-300 cursor-pointer drop-shadow-xl">
-                    <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <div className="hover:scale-125 transition-transform duration-200 cursor-pointer">
+                    <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-sm hover:drop-shadow-lg">
                         <path d="M20 40V10" stroke="#166534" strokeWidth="2" strokeLinecap="round" />
                         <path d="M20 30L5 20" stroke="#22C55E" strokeWidth="3" strokeLinecap="round" />
                         <path d="M20 30L35 20" stroke="#22C55E" strokeWidth="3" strokeLinecap="round" />
@@ -58,9 +59,9 @@ const PlantMarker = ({ type }) => {
                 </div>
             );
     }
-};
+});
 
-export default function MapPage() {
+export default function MapPage({ token }) {
     const [viewState, setViewState] = useState({
         longitude: -122.4194, // San Francisco
         latitude: 37.7749,
@@ -110,7 +111,7 @@ export default function MapPage() {
     }, []);
 
     const USER_NAME = 'EcoWarrior'; // Default fallback
-    const myPins = pins.filter(pin => filters[pin.type]);
+    const myPins = useMemo(() => pins.filter(pin => filters[pin.type]), [pins, filters]);
 
     useEffect(() => {
         navigator.geolocation.getCurrentPosition(
@@ -253,7 +254,7 @@ export default function MapPage() {
         setRouteStats({ duration: 0, distance: 0 });
     };
 
-    const buildingLayer = {
+    const buildingLayer = useMemo(() => ({
         id: '3d-buildings',
         source: 'openmaptiles',
         'source-layer': 'building',
@@ -273,9 +274,9 @@ export default function MapPage() {
             ],
             'fill-extrusion-opacity': 0.8
         }
-    };
+    }), []);
 
-    const routeLayer = {
+    const routeLayer = useMemo(() => ({
         id: 'route',
         type: 'line',
         layout: {
@@ -288,14 +289,21 @@ export default function MapPage() {
             'line-opacity': 0.9,
             'line-dasharray': [1, 2]  // Tighter dash for "tech" feel
         }
-    };
+    }), []);
 
     return (
         <div className="h-full flex flex-col space-y-4">
             <div className="flex justify-between items-center">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Conservation Map</h1>
-                    <p className="text-muted-foreground">Explore local impact in augmented 3D.</p>
+                    <p className="text-muted-foreground flex items-center gap-2">
+                        Explore local impact in augmented 3D.
+                        {pins.length > 0 && (
+                            <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 ml-2">
+                                {pins.length} Plants Found
+                            </Badge>
+                        )}
+                    </p>
                 </div>
                 <div className="space-x-2">
                     <Button onClick={() => setViewState(v => ({ ...v, pitch: v.pitch === 60 ? 0 : 60 }))}>
@@ -315,8 +323,8 @@ export default function MapPage() {
                     <GeolocateControl position="top-right" />
                     <NavigationControl position="top-right" />
 
-                    {/* Refresh Button Overlay */}
-                    <div className="absolute top-[80px] right-[10px] z-10">
+                    {/* Refresh Button Overlay - Moved to top-left to avoid blocking zoom controls */}
+                    <div className="absolute top-[10px] left-[180px] z-10">
                         <Button
                             variant="secondary"
                             size="icon"
@@ -338,7 +346,8 @@ export default function MapPage() {
                     {/* 3D Buildings Layer */}
                     <Layer {...buildingLayer} />
 
-                    {myPins.map(pin => (
+                    {/* Optimized Marker List */}
+                    {useMemo(() => myPins.map(pin => (
                         <Marker
                             key={pin.id}
                             longitude={pin.lng}
@@ -349,16 +358,16 @@ export default function MapPage() {
                                 setPopupInfo(pin);
                             }}
                         >
-                            <div className="group relative flex flex-col items-center cursor-pointer hover:z-50">
-                                {/* Persistent Callout */}
-                                <div className="mb-2 bg-white/95 text-xs font-semibold px-2 py-1 rounded shadow-md border border-border whitespace-nowrap transform transition-all group-hover:scale-110 opacity-0 group-hover:opacity-100">
+                            <div className="group relative flex flex-col items-center cursor-pointer hover:z-50 will-change-transform">
+                                {/* Persistent Callout - Optimized transitions */}
+                                <div className="mb-2 bg-white/95 text-xs font-semibold px-2 py-1 rounded shadow-sm border border-border whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                                     <span className="text-primary block">{pin.userName}</span>
                                     <span className="text-muted-foreground">{pin.plantNumber}</span>
                                 </div>
                                 <PlantMarker type={pin.type} />
                             </div>
                         </Marker>
-                    ))}
+                    )), [myPins])}
 
                     {popupInfo && (
                         <Popup

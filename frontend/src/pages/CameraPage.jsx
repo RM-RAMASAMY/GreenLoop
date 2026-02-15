@@ -196,8 +196,24 @@ export default function CameraPage({ token }) {
                             <CheckCircle className="h-8 w-8 text-emerald-600" />
                         </div>
                         <h3 className="text-xl font-bold text-emerald-800">Activity Logged! 🎉</h3>
-                        <p className="text-emerald-600 font-semibold text-lg">+{selectedType?.xp} XP</p>
-                        <p className="text-sm text-emerald-700">Keep up the great work, EcoWarrior!</p>
+                        <div className="space-y-1">
+                            <p className="text-emerald-600 font-semibold text-lg">+{selectedType?.xp || 50} XP</p>
+                            <p className="text-sm font-medium text-emerald-700">
+                                {plantName || selectedType?.label} was registered successfully.
+                            </p>
+                            {location.lat && (
+                                <p className="text-xs text-emerald-600/80 italic">
+                                    Coordinates tracked: {location.lat}, {location.lng}
+                                </p>
+                            )}
+                        </div>
+                        <Button
+                            variant="outline"
+                            className="mt-4 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+                            onClick={() => setSubmitted(false)}
+                        >
+                            Log Another
+                        </Button>
                     </CardContent>
                 </Card>
             )}

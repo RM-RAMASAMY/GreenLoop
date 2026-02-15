@@ -205,6 +205,8 @@ app.post('/api/action', authMiddleware, async (req, res) => {
             location: details?.location || null,
         });
 
+        console.log(`[ACTION] ${actionType} logged by ${req.userName}. Location:`, action.location);
+
         // Update user XP
         const user = await User.findById(req.userId);
         user.totalXP += xpGained;
@@ -312,18 +314,21 @@ app.get('/api/actions', authMiddleware, async (req, res) => {
 // 10. Get All Plant Pins for Map
 app.get('/api/plants', async (req, res) => {
     try {
+        console.log('[GET] Fetching all plant pins...');
         // Find all PLANT actions that have a location
         const actions = await Action.find({
             actionType: 'PLANT',
-            'location.lat': { $exists: true },
-            'location.lng': { $exists: true }
+            'location.lat': { $ne: null },
+            'location.lng': { $ne: null }
         }).populate('userId', 'name');
+
+        console.log(`[GET] Found ${actions.length} potential plants with location.`);
 
         // Map to format suitable for MapPage pins
         const plantPins = actions.map(a => ({
             id: a._id,
-            lat: a.location.lat,
-            lng: a.location.lng,
+            lat: Number(a.location.lat),
+            lng: Number(a.location.lng),
             userName: a.userId?.name || 'EcoWarrior',
             plantNumber: a.details?.plantName || 'Plant',
             type: a.details?.plantType || 'tree',
@@ -334,6 +339,7 @@ app.get('/api/plants', async (req, res) => {
 
         res.json(plantPins);
     } catch (err) {
+        console.error('[ERROR] /api/plants failed:', err);
         res.status(500).json({ error: err.message });
     }
 });
