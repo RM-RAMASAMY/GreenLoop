@@ -16,7 +16,11 @@ const app = express();
 const PORT = 3001;
 
 // --- Middleware ---
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true }));
+app.use(cors({
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+}));
 app.use(bodyParser.json());
 
 // --- MongoDB Connection ---
@@ -102,7 +106,7 @@ app.post('/auth/demo-login', async (req, res) => {
             user = await User.create({
                 name: name || 'EcoWarrior',
                 email: email || 'demo@greenloop.app',
-                totalXP: 250,
+                totalXP: 0, // Start at 0 for real progress
             });
             // Seed some demo data for new users
             await seedDemoData(user._id);
@@ -139,36 +143,53 @@ app.get('/api/user/me', authMiddleware, async (req, res) => {
 // 2. Get User Stats (Dashboard data)
 app.get('/api/user/me/stats', authMiddleware, async (req, res) => {
     try {
-        const user = await User.findById(req.userId);
+        let user = await User.findById(req.userId);
         if (!user) return res.status(404).json({ error: 'User not found' });
 
-        // Get actions from the last 7 days for chart data
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        // Recalculate total XP from all sources to ensure absolute synchronization
+        const allActions = await Action.find({ userId: req.userId }).sort({ createdAt: 1 });
+        const totalActionXP = allActions.reduce((s, a) => s + (a.xpGained || 0), 0);
 
-        const recentActions = await Action.find({
-            userId: req.userId,
-            createdAt: { $gte: sevenDaysAgo }
-        }).sort({ createdAt: 1 });
+        const swaps = await Swap.find({ userId: req.userId });
+        const totalSwapXP = swaps.reduce((s, sw) => s + (sw.xp || 100), 0);
 
-        // Aggregate XP by day for chart
+        const calculatedXP = totalActionXP + totalSwapXP;
+
+        // Auto-sync User model if drift detected
+        if (user.totalXP !== calculatedXP) {
+            console.log(`[SYNC] XP Drift Corrected for ${user.name}: ${user.totalXP} -> ${calculatedXP}`);
+            user.totalXP = calculatedXP;
+            user.calculateLevel();
+            await user.save();
+        }
+
+        // Streak & Total Logs Calculation
+        const dates = [...new Set(allActions.map(a => new Date(a.createdAt).toDateString()))];
+        const streak = dates.length; // Count unique active days
+
+        const today = new Date().toDateString();
+        const todayXP = allActions
+            .filter(a => new Date(a.createdAt).toDateString() === today)
+            .reduce((s, a) => s + (a.xpGained || 0), 0);
+
+        // Weekly Chart Data
         const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         const xpByDay = {};
         days.forEach(d => xpByDay[d] = 0);
-        recentActions.forEach(a => {
+
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        allActions.filter(a => a.createdAt >= sevenDaysAgo).forEach(a => {
             const day = days[new Date(a.createdAt).getDay()];
             xpByDay[day] += a.xpGained;
         });
         const xpData = days.map(d => ({ name: d, xp: xpByDay[d] }));
 
-        // Impact breakdown from swaps
-        const swaps = await Swap.find({ userId: req.userId });
         const totalCO2 = swaps.reduce((sum, s) => sum + (s.co2Saved || 0), 0);
         const totalPlastic = swaps.reduce((sum, s) => sum + (s.plasticSaved || 0), 0);
-        const totalActions = await Action.countDocuments({ userId: req.userId });
 
         const impactData = [
-            { name: 'Activities', value: totalActions, color: '#10B981' },
+            { name: 'Activities', value: allActions.length, color: '#10B981' },
             { name: 'CO₂ Saved', value: Math.round(totalCO2 * 10), color: '#3B82F6' },
             { name: 'Plastic', value: Math.round(totalPlastic / 10), color: '#F59E0B' },
         ];
@@ -178,10 +199,12 @@ app.get('/api/user/me/stats', authMiddleware, async (req, res) => {
             level: user.level,
             xp: user.totalXP,
             nextLevelXp: getNextLevelXp(user.totalXP),
-            streak: user.streak,
+            streak,
+            todayXP,
+            totalLogs: allActions.length,
             xpData,
             impactData,
-            totalActions,
+            totalActions: allActions.length,
             totalSwaps: swaps.length,
         });
     } catch (err) {
@@ -307,6 +330,46 @@ app.get('/api/actions', authMiddleware, async (req, res) => {
             .limit(limit);
         res.json(actions);
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 9.5 Delete an Action
+app.delete('/api/actions/:id', authMiddleware, async (req, res) => {
+    console.log(`[DELETE_REQ] Attempting to delete action: ${req.params.id} for user: ${req.userId}`);
+    try {
+        // Find action first to get XP value
+        const action = await Action.findOne({ _id: req.params.id, userId: req.userId });
+        if (!action) {
+            return res.status(404).json({ error: 'Action not found or unauthorized' });
+        }
+
+        const xpToSubtract = action.xpGained || 0;
+
+        // Delete the action
+        await Action.findByIdAndDelete(req.params.id);
+
+        // Update user XP atomically to prevent drift
+        const updatedUser = await User.findByIdAndUpdate(
+            req.userId,
+            { $inc: { totalXP: -xpToSubtract } },
+            { new: true }
+        );
+
+        if (updatedUser) {
+            if (updatedUser.totalXP < 0) updatedUser.totalXP = 0;
+            updatedUser.calculateLevel();
+            await updatedUser.save();
+            console.log(`[DELETE] Action ${req.params.id} deleted. Subtracted ${xpToSubtract} XP. New total: ${updatedUser.totalXP}`);
+        }
+
+        res.json({
+            success: true,
+            message: 'Action deleted and XP updated',
+            newTotal: user ? user.totalXP : null
+        });
+    } catch (err) {
+        console.error('[DELETE_ERR]', err);
         res.status(500).json({ error: err.message });
     }
 });

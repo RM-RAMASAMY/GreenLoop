@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { Camera, Upload, CheckCircle, MapPin, Clock, Flame, TreePine, Bike, Recycle, Droplets, ShoppingBag, Sun, ChevronDown, X, Plus, Award, LocateFixed, Loader2, RefreshCw } from 'lucide-react';
+import { Camera, Upload, CheckCircle, MapPin, Clock, Flame, TreePine, Bike, Recycle, Droplets, ShoppingBag, Sun, ChevronDown, X, Plus, Award, LocateFixed, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
@@ -38,16 +38,19 @@ export default function CameraPage({ token }) {
     const [locating, setLocating] = useState(false);
     const [history, setHistory] = useState([]);
     const [refreshing, setRefreshing] = useState(false);
+    const [stats, setStats] = useState({ streak: 0, todayXP: 0, totalLogs: 0 });
 
     // Plant-specific states
     const [plantName, setPlantName] = useState('');
     const [plantType, setPlantType] = useState('tree');
     const [plantTitle, setPlantTitle] = useState('');
 
-    // Fetch real activity history
+    // Fetch real activity history and stats
     const refreshHistory = () => {
         if (!token) return;
         setRefreshing(true);
+
+        // 1. Fetch history
         fetch(`${API_URL}/api/actions?limit=5`, {
             headers: { Authorization: `Bearer ${token}` }
         })
@@ -57,6 +60,16 @@ export default function CameraPage({ token }) {
                 setRefreshing(false);
             })
             .catch(() => setRefreshing(false));
+
+        // 2. Fetch stats for top cards
+        fetch(`${API_URL}/api/user/me/stats`, {
+            headers: { Authorization: `Bearer ${token}` }
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data && !data.error) setStats(data);
+            })
+            .catch(err => console.error('Stats fetch error:', err));
     };
 
     useEffect(() => { refreshHistory(); }, [token]);
@@ -138,10 +151,31 @@ export default function CameraPage({ token }) {
         }
     };
 
-    // Stats from real history
-    const todayXP = history.reduce((sum, a) => sum + (a.xpGained || 0), 0);
-    const streak = 0; // Could be calculated from consecutive days
-    const totalLogs = history.length;
+    const handleDeleteAction = async (id) => {
+        console.log(`[DELETE_FRONTEND] Requesting delete for action: ${id}`);
+        if (!window.confirm('Are you sure you want to remove this activity?')) return;
+        try {
+            const res = await fetch(`${API_URL}/api/actions/${id}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            console.log(`[DELETE_FRONTEND] Response status: ${res.status}`);
+            if (res.ok) {
+                console.log('[DELETE_FRONTEND] Success, refreshing history');
+                refreshHistory();
+            } else {
+                const errorBody = await res.json().catch(() => ({}));
+                console.error('[DELETE_FRONTEND] Failed to delete:', errorBody);
+                alert(`Failed to delete action: ${errorBody.error || 'Unknown error'}`);
+            }
+        } catch (err) {
+            console.error('[DELETE_FRONTEND] Network error:', err);
+        }
+    };
+
+    const todayXP = stats.todayXP;
+    const streak = stats.streak;
+    const totalLogs = stats.totalLogs;
 
     return (
         <div className="max-w-3xl mx-auto space-y-8">
@@ -489,8 +523,15 @@ export default function CameraPage({ token }) {
                                             <div className="font-bold text-emerald-600 text-sm">+{item.xpGained} XP</div>
                                             <div className="text-xs text-muted-foreground">{timeAgo(item.createdAt)}</div>
                                         </div>
-                                        <div className="flex-shrink-0">
+                                        <div className="flex-shrink-0 flex items-center gap-2">
                                             <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 text-xs">✓ Verified</Badge>
+                                            <button
+                                                onClick={() => handleDeleteAction(item._id)}
+                                                className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                                                title="Remove activity"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
                                         </div>
                                     </div>
                                 );
