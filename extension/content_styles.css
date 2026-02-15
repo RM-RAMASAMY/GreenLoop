@@ -73,13 +73,18 @@
 
 .gl-stats {
     display: flex;
+    justify-content: space-between;
+    align-items: center;
     gap: 10px;
     font-size: 12px;
     font-weight: bold;
+    background: #f0fdf4;
+    padding: 6px 10px;
+    border-radius: 6px;
 }
 
 .gl-score { color: #2E7D32; }
-.gl-points { color: #F57F17; }
+.gl-points { color: #F57F17; font-weight: normal; font-size: 11px; }
 
 #gl-swap-btn {
     background: #2E7D32;

@@ -77,8 +77,8 @@ function injectBanner(fullData) {
                     <h3>${swapData.name}</h3>
                     <p>${swapData.description}</p>
                     <div class="gl-stats">
-                        <span class="gl-score">EcoScore: ${swapData.ecoScore}/100</span>
-                        <span class="gl-points">+100 EcoXP</span>
+                        <span class="gl-score" title="Product sustainability rating by AI">🌱 Sustainability: ${swapData.ecoScore}/100</span>
+                        <span class="gl-points">+100 EcoXP if swapped</span>
                     </div>
                 </div>
                 <button id="gl-swap-btn">View Swap</button>
