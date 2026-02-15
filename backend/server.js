@@ -140,6 +140,87 @@ app.get('/api/user/me', authMiddleware, async (req, res) => {
     }
 });
 
+// --- Voice AI Integration (Gemini + ElevenLabs) ---
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const axios = require('axios');
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+app.post('/api/chat', authMiddleware, async (req, res) => {
+    const { message } = req.body;
+
+    try {
+        // 1. Gemini Reasoning
+        // Using gemini-1.5-flash-latest as requested
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const chat = model.startChat({
+            history: [
+                {
+                    role: "user",
+                    parts: [{ text: "You are 'The Green Man', a wise, friendly, and slightly mystical AI assistant focused on sustainability, nature, and eco-friendly living. Keep your answers concise, encouraging, and helpful. Do not use markdown formatting like asterisks or hash symbols, just plain text suitable for speech." }],
+                },
+                {
+                    role: "model",
+                    parts: [{ text: "Greetings, friend of the earth. I am The Green Man. How may I assist you in your journey towards a greener life today?" }],
+                },
+            ],
+        });
+
+        const result = await chat.sendMessage(message);
+        const replyText = result.response.text();
+
+        // 2. ElevenLabs Text-to-Speech
+        let audioBase64 = null;
+        if (process.env.ELEVENLABS_API_KEY) {
+            try {
+                // Use '9BWtsMINqrJLrRacOk9x' (Aria) as default - standard voices are usually free
+                const voiceId = process.env.ELEVENLABS_VOICE_ID || '9BWtsMINqrJLrRacOk9x';
+                console.log("Using ElevenLabs Voice ID:", voiceId);
+                const ttsResponse = await axios.post(
+                    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+                    {
+                        text: replyText,
+                        model_id: "eleven_flash_v2_5",
+                        voice_settings: {
+                            stability: 0.5,
+                            similarity_boost: 0.75,
+                        },
+                    },
+                    {
+                        headers: {
+                            'Accept': 'audio/mpeg',
+                            'xi-api-key': process.env.ELEVENLABS_API_KEY,
+                            'Content-Type': 'application/json',
+                        },
+                        responseType: 'arraybuffer',
+                    }
+                );
+                audioBase64 = Buffer.from(ttsResponse.data).toString('base64');
+            } catch (ttsError) {
+                console.error("ElevenLabs TTS Error:", ttsError.message);
+                if (ttsError.response) {
+                    // Convert buffer to string for readable error message
+                    const errorMsg = Buffer.isBuffer(ttsError.response.data)
+                        ? ttsError.response.data.toString('utf8')
+                        : JSON.stringify(ttsError.response.data);
+                    console.error("ElevenLabs Error Details:", errorMsg);
+                }
+                // Fallback: Frontend will handle missing audio (or use browser TTS)
+            }
+        }
+
+        res.json({ reply: replyText, audio: audioBase64 });
+
+    } catch (error) {
+        console.error("Voice AI Error Details:", error);
+
+        if (error.response) {
+            console.error("API Response Error:", error.response.data);
+        }
+        res.status(500).json({ error: "Failed to commune with nature (AI Error)" });
+    }
+});
+
 // 2. Get User Stats (Dashboard data)
 app.get('/api/user/me/stats', authMiddleware, async (req, res) => {
     try {
@@ -378,7 +459,7 @@ app.delete('/api/actions/:id', authMiddleware, async (req, res) => {
             if (updatedUser.totalXP < 0) updatedUser.totalXP = 0;
             updatedUser.calculateLevel();
             await updatedUser.save();
-             console.log(`[DELETE] Action ${req.params.id} deleted. Subtracted ${xpToSubtract} XP. New total: ${updatedUser.totalXP}`);
+            console.log(`[DELETE] Action ${req.params.id} deleted. Subtracted ${xpToSubtract} XP. New total: ${updatedUser.totalXP}`);
         }
 
         res.json({
