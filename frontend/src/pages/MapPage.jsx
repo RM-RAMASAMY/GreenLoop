@@ -4,7 +4,8 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Car, Footprints, Bike, X, Navigation, Loader2 } from 'lucide-react';
+import { Car, Footprints, Bike, X, Navigation, Loader2, RefreshCw } from 'lucide-react';
+const API_URL = 'http://localhost:3001';
 
 // Plant Marker Component with Custom Premium SVGs
 const PlantMarker = ({ type }) => {
@@ -85,25 +86,31 @@ export default function MapPage() {
         fern: true
     });
 
-    // Mock data with types
-    const pins = [
-        { id: 1, lat: 37.7749, lng: -122.4194, userName: 'EcoWarrior', plantNumber: 'Tree #142', type: 'tree', title: 'City Hall Garden', desc: 'Maintained by GreenLoop' },
-        { id: 2, lat: 37.7760, lng: -122.4220, userName: 'EcoWarrior', plantNumber: 'Bush #089', type: 'bush', title: 'Community Patch', desc: 'Pruned yesterday' },
-        { id: 3, lat: 37.7730, lng: -122.4210, userName: 'NatureLover', plantNumber: 'Flower #303', type: 'flower', title: 'Urban Oases', desc: 'Guerrilla Gardening' },
-        { id: 4, lat: 37.7755, lng: -122.4200, userName: 'EcoWarrior', plantNumber: 'Fern #021', type: 'fern', title: 'My Balcony', desc: 'Watered today' },
-        { id: 5, lat: 37.7785, lng: -122.4180, userName: 'EcoWarrior', plantNumber: 'Tree #155', type: 'tree', title: 'Plaza Oak', desc: 'Planted 2023' },
-        { id: 6, lat: 37.7725, lng: -122.4150, userName: 'EcoWarrior', plantNumber: 'Flower #412', type: 'flower', title: 'Market St. Bloom', desc: 'Needs water soon' },
-        { id: 7, lat: 37.7765, lng: -122.4165, userName: 'EcoWarrior', plantNumber: 'Bush #099', type: 'bush', title: 'Library Hedge', desc: 'Trimming required' },
-        { id: 8, lat: 37.7790, lng: -122.4215, userName: 'EcoWarrior', plantNumber: 'Tree #167', type: 'tree', title: 'Opera House Pine', desc: 'Magnificent height' },
-        { id: 9, lat: 37.7740, lng: -122.4230, userName: 'EcoWarrior', plantNumber: 'Fern #042', type: 'fern', title: 'Hayes Valley Fern', desc: 'Thriving well' },
-        { id: 10, lat: 37.7710, lng: -122.4185, userName: 'EcoWarrior', plantNumber: 'Flower #505', type: 'flower', title: 'SOMA Petals', desc: 'Check soil pH' },
-        { id: 11, lat: 37.7800, lng: -122.4190, userName: 'EcoWarrior', plantNumber: 'Tree #180', type: 'tree', title: 'Polk St. Maple', desc: 'Autumn colors' },
-        { id: 12, lat: 37.7750, lng: -122.4240, userName: 'EcoWarrior', plantNumber: 'Bush #101', type: 'bush', title: 'Gough St. Shrub', desc: 'Native species' },
-        { id: 13, lat: 37.7770, lng: -122.4140, userName: 'EcoWarrior', plantNumber: 'Flower #601', type: 'flower', title: 'UN Plaza Tulip', desc: 'Seasonal bloom' }
-    ];
+    const [pins, setPins] = useState([]);
+    const [isLoadingPins, setIsLoadingPins] = useState(true);
 
-    const USER_NAME = 'EcoWarrior';
-    const myPins = pins.filter(pin => pin.userName === USER_NAME && filters[pin.type]);
+    // Fetch pins from MongoDB
+    const fetchPins = async () => {
+        setIsLoadingPins(true);
+        try {
+            const res = await fetch(`${API_URL}/api/plants`);
+            const data = await res.json();
+            if (Array.isArray(data)) {
+                setPins(data);
+            }
+        } catch (err) {
+            console.error('Error fetching plant pins:', err);
+        } finally {
+            setIsLoadingPins(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchPins();
+    }, []);
+
+    const USER_NAME = 'EcoWarrior'; // Default fallback
+    const myPins = pins.filter(pin => filters[pin.type]);
 
     useEffect(() => {
         navigator.geolocation.getCurrentPosition(
@@ -307,6 +314,19 @@ export default function MapPage() {
                 >
                     <GeolocateControl position="top-right" />
                     <NavigationControl position="top-right" />
+
+                    {/* Refresh Button Overlay */}
+                    <div className="absolute top-[80px] right-[10px] z-10">
+                        <Button
+                            variant="secondary"
+                            size="icon"
+                            className="bg-white/95 backdrop-blur-sm shadow-md h-9 w-9 hover:bg-white"
+                            onClick={fetchPins}
+                            disabled={isLoadingPins}
+                        >
+                            <RefreshCw size={18} className={isLoadingPins ? 'animate-spin' : ''} />
+                        </Button>
+                    </div>
 
                     {/* Route Layer */}
                     {routeData && (
