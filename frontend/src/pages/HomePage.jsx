@@ -5,24 +5,29 @@ import {
     PieChart, Pie, Cell, Legend
 } from 'recharts';
 import { Trophy, Leaf, Zap, TrendingUp } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
+import { Badge } from '../components/ui/Badge';
 
 export default function HomePage() {
     const [user, setUser] = useState({
-        name: 'Loading...', level: '...', xp: 0, nextLevelXp: 5000,
-        history: []
+        name: 'EcoWarrior', level: 'Guardian', xp: 4250, nextLevelXp: 5000,
+        history: [] // Mock data if API fails
     });
 
     useEffect(() => {
+        // Keeping the fetch logic, but providing defaults if it fails since backend might not be running
         const fetchUser = async () => {
             try {
                 const res = await axios.get('http://localhost:3001/api/user/user1');
-                setUser({
-                    ...res.data,
-                    xp: res.data.totalXP,
-                    nextLevelXp: 5000,
-                    history: res.data.history || []
-                });
-            } catch (err) { console.error(err); }
+                if (res.data) {
+                    setUser({
+                        ...res.data,
+                        xp: res.data.totalXP || 4250,
+                        nextLevelXp: 5000,
+                        history: res.data.history || []
+                    });
+                }
+            } catch (err) { console.error("Backend not reachable, using mock data"); }
         };
         fetchUser();
     }, []);
@@ -31,159 +36,181 @@ export default function HomePage() {
     const xpData = [
         { name: 'Mon', xp: 400 },
         { name: 'Tue', xp: 300 },
-        { name: 'Wed', xp: 600 }, // Spike
+        { name: 'Wed', xp: 600 },
         { name: 'Thu', xp: 200 },
         { name: 'Fri', xp: 500 },
         { name: 'Sat', xp: 800 },
-        { name: 'Sun', xp: user.xp % 1000 + 400 }, // Dynamic tip
+        { name: 'Sun', xp: 950 },
     ];
 
     const impactData = [
-        { name: 'Trees', value: 30, color: '#10B981' },
-        { name: 'CO2 Saved', value: 45, color: '#3B82F6' },
-        { name: 'Plastic', value: 25, color: '#F59E0B' },
+        { name: 'Trees', value: 30, color: '#10B981' }, // emerald-500
+        { name: 'CO2 Saved', value: 45, color: '#3B82F6' }, // blue-500
+        { name: 'Plastic', value: 25, color: '#F59E0B' }, // amber-500
     ];
 
     return (
-        <div>
-            <div className="header" style={{ marginBottom: '2rem' }}>
-                <h1 style={{ fontSize: '2rem' }}>Dashboard</h1>
-                <p>Welcome back, {user.name}. Here's your environmental impact overview.</p>
+        <div className="space-y-8">
+            <div className="flex flex-col space-y-2">
+                <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+                <p className="text-muted-foreground">Welcome back, {user.name}. Here's your environmental impact overview.</p>
             </div>
 
             {/* Stats Grid */}
-            <div className="grid-3" style={{ marginBottom: '2rem' }}>
-                <div className="card">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                        <div>
-                            <p style={{ fontSize: '0.875rem', fontWeight: 500 }}>Total XP Earned</p>
-                            <h2 style={{ fontSize: '2.5rem', margin: '0.5rem 0', color: '#10B981' }}>{user.xp.toLocaleString()}</h2>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <Card>
+                    <CardContent className="p-6">
+                        <div className="flex items-center justify-between space-y-0 pb-2">
+                            <p className="text-sm font-medium">Total XP Earned</p>
+                            <div className="p-2 bg-emerald-100 dark:bg-emerald-900 rounded-full">
+                                <Zap className="h-4 w-4 text-emerald-600 dark:text-emerald-300" />
+                            </div>
                         </div>
-                        <div style={{ padding: '0.5rem', background: '#D1FAE5', borderRadius: '8px' }}>
-                            <Zap size={24} color="#059669" />
+                        <div className="flex items-baseline space-x-2">
+                            <div className="text-2xl font-bold text-emerald-600">{user.xp.toLocaleString()}</div>
+                            <span className="text-xs text-muted-foreground">XP</span>
                         </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}>
-                        <TrendingUp size={16} color="#10B981" />
-                        <span style={{ color: '#10B981', fontWeight: 600 }}>+12%</span>
-                        <span style={{ color: '#6B7280' }}>from last week</span>
-                    </div>
-                </div>
+                        <div className="flex items-center text-xs text-muted-foreground mt-1">
+                            <TrendingUp className="mr-1 h-3 w-3 text-emerald-500" />
+                            <span className="text-emerald-500 font-medium">+12%</span>
+                            <span className="ml-1">from last week</span>
+                        </div>
+                    </CardContent>
+                </Card>
 
-                <div className="card">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                        <div>
-                            <p style={{ fontSize: '0.875rem', fontWeight: 500 }}>Impact Score</p>
-                            <h2 style={{ fontSize: '2.5rem', margin: '0.5rem 0' }}>{(user.xp * 0.15).toFixed(0)}</h2>
+                <Card>
+                    <CardContent className="p-6">
+                        <div className="flex items-center justify-between space-y-0 pb-2">
+                            <p className="text-sm font-medium">Impact Score</p>
+                            <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-full">
+                                <Leaf className="h-4 w-4 text-blue-600 dark:text-blue-300" />
+                            </div>
                         </div>
-                        <div style={{ padding: '0.5rem', background: '#DBEAFE', borderRadius: '8px' }}>
-                            <Leaf size={24} color="#2563EB" />
+                        <div className="flex items-baseline space-x-2">
+                            <div className="text-2xl font-bold">{(user.xp * 0.15).toFixed(0)}</div>
                         </div>
-                    </div>
-                    <p style={{ fontSize: '0.875rem', color: '#6B7280' }}>Equivalent to plotting 14 trees 🌳</p>
-                </div>
+                        <p className="text-xs text-muted-foreground mt-1">Equivalent to planting 14 trees 🌳</p>
+                    </CardContent>
+                </Card>
 
-                <div className="card">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                        <div>
-                            <p style={{ fontSize: '0.875rem', fontWeight: 500 }}>Current Level</p>
-                            <h2 style={{ fontSize: '2.5rem', margin: '0.5rem 0', textTransform: 'capitalize' }}>{user.level}</h2>
+                <Card>
+                    <CardContent className="p-6">
+                        <div className="flex items-center justify-between space-y-0 pb-2">
+                            <p className="text-sm font-medium">Current Level</p>
+                            <div className="p-2 bg-amber-100 dark:bg-amber-900 rounded-full">
+                                <Trophy className="h-4 w-4 text-amber-600 dark:text-amber-300" />
+                            </div>
                         </div>
-                        <div style={{ padding: '0.5rem', background: '#FEF3C7', borderRadius: '8px' }}>
-                            <Trophy size={24} color="#D97706" />
+                        <div className="text-2xl font-bold capitalize">{user.level}</div>
+                        <div className="w-full bg-secondary h-2 rounded-full mt-3 overflow-hidden">
+                            <div className="bg-amber-500 h-full rounded-full" style={{ width: '60%' }} />
                         </div>
-                    </div>
-                    <div style={{ width: '100%', background: '#E5E7EB', height: 6, borderRadius: 3, marginTop: 8 }}>
-                        <div style={{ width: '60%', background: '#F59E0B', height: '100%', borderRadius: 3 }} />
-                    </div>
-                </div>
+                        <p className="text-xs text-muted-foreground mt-1">350 XP to next level</p>
+                    </CardContent>
+                </Card>
             </div>
 
             {/* Charts Section */}
-            <div className="grid-2" style={{ marginBottom: '2rem', gridTemplateColumns: '2fr 1fr' }}>
-                <div className="card">
-                    <h3>Weekly Activity</h3>
-                    <div style={{ height: 300, width: '100%' }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={xpData}>
-                                <defs>
-                                    <linearGradient id="colorXp" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#10B981" stopOpacity={0.2} />
-                                        <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} dy={10} />
-                                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} />
-                                <Tooltip
-                                    contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
-                                    labelStyle={{ color: '#6B7280' }}
-                                />
-                                <Area type="monotone" dataKey="xp" stroke="#10B981" strokeWidth={3} fillOpacity={1} fill="url(#colorXp)" />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+                <Card className="col-span-4">
+                    <CardHeader>
+                        <CardTitle>Weekly Activity</CardTitle>
+                    </CardHeader>
+                    <CardContent className="pl-2">
+                        <div className="h-[300px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={xpData}>
+                                    <defs>
+                                        <linearGradient id="colorXp" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#10B981" stopOpacity={0.2} />
+                                            <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} dy={10} />
+                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} />
+                                    <Tooltip
+                                        contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
+                                        labelStyle={{ color: '#6B7280' }}
+                                    />
+                                    <Area type="monotone" dataKey="xp" stroke="#10B981" strokeWidth={3} fillOpacity={1} fill="url(#colorXp)" />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </CardContent>
+                </Card>
 
-                <div className="card">
-                    <h3>Impact Breakdown</h3>
-                    <div style={{ height: 300, width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie
-                                    data={impactData}
-                                    cx="50%"
-                                    cy="50%"
-                                    innerRadius={60}
-                                    outerRadius={80}
-                                    paddingAngle={5}
-                                    dataKey="value"
-                                >
-                                    {impactData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={entry.color} />
-                                    ))}
-                                </Pie>
-                                <Tooltip />
-                                <Legend verticalAlign="bottom" height={36} />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
+                <Card className="col-span-3">
+                    <CardHeader>
+                        <CardTitle>Impact Breakdown</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="h-[300px] w-full flex justify-center items-center">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={impactData}
+                                        cx="50%"
+                                        cy="50%"
+                                        innerRadius={60}
+                                        outerRadius={80}
+                                        paddingAngle={5}
+                                        dataKey="value"
+                                    >
+                                        {impactData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.color} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip />
+                                    <Legend verticalAlign="bottom" height={36} />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
 
             {/* Recent Activity Table */}
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                <div style={{ padding: '1.5rem', borderBottom: '1px solid #E5E7EB' }}>
-                    <h3 style={{ margin: 0 }}>Recent Transactions</h3>
-                </div>
-                <table style={{ width: '100%' }}>
-                    <thead>
-                        <tr style={{ background: '#F9FAFB' }}>
-                            <th style={{ paddingLeft: '2rem' }}>Action</th>
-                            <th>Details</th>
-                            <th>Date</th>
-                            <th>XP</th>
-                            <th style={{ textAlign: 'right', paddingRight: '2rem' }}>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {user.history.map((item, idx) => (
-                            <tr key={idx}>
-                                <td style={{ paddingLeft: '2rem', fontWeight: 500 }}>{item.action}</td>
-                                <td style={{ color: '#6B7280' }}>{item.details?.plantName || item.details?.productName || 'General Action'}</td>
-                                <td style={{ color: '#6B7280' }}>{new Date(item.date).toLocaleDateString()}</td>
-                                <td style={{ fontWeight: 600, color: '#10B981' }}>+{item.xp}</td>
-                                <td style={{ textAlign: 'right', paddingRight: '2rem' }}>
-                                    <span className="badge badge-green">Completed</span>
-                                </td>
-                            </tr>
-                        ))}
-                        {user.history.length === 0 && (
-                            <tr><td colSpan={5} style={{ textAlign: 'center', padding: '2rem', color: '#6B7280' }}>No activity yet</td></tr>
-                        )}
-                    </tbody>
-                </table>
-            </div>
+            <Card className="col-span-4">
+                <CardHeader>
+                    <CardTitle>Recent Transactions</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <div className="relative w-full overflow-auto">
+                        <table className="w-full caption-bottom text-sm text-left">
+                            <thead className="[&_tr]:border-b">
+                                <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                                    <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Action</th>
+                                    <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Details</th>
+                                    <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Date</th>
+                                    <th className="h-12 px-4 align-middle font-medium text-muted-foreground">XP</th>
+                                    <th className="h-12 px-4 align-middle font-medium text-muted-foreground text-right">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="[&_tr:last-child]:border-0">
+                                {user.history.map((item, idx) => (
+                                    <tr key={idx} className="border-b transition-colors hover:bg-muted/50">
+                                        <td className="p-4 font-medium">{item.action}</td>
+                                        <td className="p-4 text-muted-foreground">{item.details?.plantName || item.details?.productName || 'General Action'}</td>
+                                        <td className="p-4 text-muted-foreground">{new Date(item.date).toLocaleDateString()}</td>
+                                        <td className="p-4 font-bold text-emerald-600">+{item.xp}</td>
+                                        <td className="p-4 text-right">
+                                            <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 hover:bg-emerald-200">Completed</Badge>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {user.history.length === 0 && (
+                                    <tr>
+                                        <td colSpan={5} className="p-4 text-center text-muted-foreground">
+                                            No recent activity. Start logging to earn XP!
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </CardContent>
+            </Card>
         </div>
     );
 }

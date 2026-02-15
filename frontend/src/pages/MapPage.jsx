@@ -1,67 +1,113 @@
-import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
-import icon from 'leaflet/dist/images/marker-icon.png';
-import iconShadow from 'leaflet/dist/images/marker-shadow.png';
-
-let DefaultIcon = L.icon({
-    iconUrl: icon,
-    shadowUrl: iconShadow,
-    iconSize: [25, 41],
-    iconAnchor: [12, 41]
-});
-L.Marker.prototype.options.icon = DefaultIcon;
+import React, { useState, useEffect, useRef } from 'react';
+import Map, { NavigationControl, Marker, Popup } from 'react-map-gl/maplibre';
+import maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import { Card } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
 
 export default function MapPage() {
-    const [position, setPosition] = useState(null);
+    const [viewState, setViewState] = useState({
+        longitude: -122.4324,
+        latitude: 37.78825,
+        zoom: 14,
+        pitch: 60, // Isometric view
+        bearing: -20
+    });
+    const [popupInfo, setPopupInfo] = useState(null);
 
-    useEffect(() => {
-        navigator.geolocation.getCurrentPosition(
-            (pos) => setPosition([pos.coords.latitude, pos.coords.longitude]),
-            (err) => console.error(err)
-        );
-    }, []);
-
-    const plants = [
+    // Mock data
+    const pins = [
         { id: 1, lat: 37.78825, lng: -122.4324, title: 'My Basil', desc: 'Planted 2 days ago' },
         { id: 2, lat: 37.78925, lng: -122.4344, title: 'Community Garden', desc: 'Maintained by GreenLoop' }
     ];
 
-    if (!position) return <div style={{ padding: '2rem' }}>Locating...</div>;
+    useEffect(() => {
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                setViewState(prev => ({
+                    ...prev,
+                    latitude: pos.coords.latitude,
+                    longitude: pos.coords.longitude
+                }));
+            },
+            (err) => console.error(err)
+        );
+    }, []);
 
     return (
-        <div>
-            <div className="header">
-                <h1>Conservation Map</h1>
-                <p>Explore green initiatives in your community.</p>
-            </div>
-
-            <div className="card" style={{ padding: 0, height: 'calc(100vh - 12rem)', overflow: 'hidden', position: 'relative' }}>
-                <MapContainer center={position} zoom={13} style={{ height: '100%', width: '100%' }}>
-                    <TileLayer
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />
-                    <Marker position={position}>
-                        <Popup>You are here!</Popup>
-                    </Marker>
-                    {plants.map(p => (
-                        <Marker key={p.id} position={[p.lat, p.lng]}>
-                            <Popup>
-                                <strong>{p.title}</strong><br />{p.desc}
-                            </Popup>
-                        </Marker>
-                    ))}
-                </MapContainer>
-
-                {/* Floating Controls Overlay */}
-                <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 1000, background: 'white', padding: '10px', borderRadius: 8, boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
-                    <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>Filters</div>
-                    <div style={{ fontSize: '0.875rem', marginTop: 5 }}>✅ My Plants</div>
-                    <div style={{ fontSize: '0.875rem', marginTop: 5 }}>✅ Community</div>
+        <div className="h-full flex flex-col space-y-4">
+            <div className="flex justify-between items-center">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">Conservation Map</h1>
+                    <p className="text-muted-foreground">Explore green initiatives in your community in 3D.</p>
+                </div>
+                <div className="space-x-2">
+                    <Button variant="outline" onClick={() => setViewState(v => ({ ...v, bearing: v.bearing + 90 }))}>
+                        Rotate
+                    </Button>
+                    <Button onClick={() => setViewState(v => ({ ...v, pitch: v.pitch === 60 ? 0 : 60 }))}>
+                        Toggle 3D
+                    </Button>
                 </div>
             </div>
+
+            <Card className="flex-1 overflow-hidden relative min-h-[500px] border-none shadow-md">
+                <Map
+                    {...viewState}
+                    onMove={evt => setViewState(evt.viewState)}
+                    style={{ width: '100%', height: '100%' }}
+                    mapStyle="https://demotiles.maplibre.org/style.json" // Free sample style
+                    mapLib={maplibregl}
+                >
+                    <NavigationControl position="top-right" />
+
+                    {pins.map(pin => (
+                        <Marker
+                            key={pin.id}
+                            longitude={pin.lng}
+                            latitude={pin.lat}
+                            anchor="bottom"
+                            onClick={e => {
+                                e.originalEvent.stopPropagation();
+                                setPopupInfo(pin);
+                            }}
+                        >
+                            <div className="cursor-pointer text-4xl hover:scale-110 transition-transform">
+                                🌱
+                            </div>
+                        </Marker>
+                    ))}
+
+                    {popupInfo && (
+                        <Popup
+                            anchor="top"
+                            longitude={popupInfo.lng}
+                            latitude={popupInfo.lat}
+                            onClose={() => setPopupInfo(null)}
+                        >
+                            <div className="p-2">
+                                <strong className="block text-lg">{popupInfo.title}</strong>
+                                <p className="text-sm text-gray-600">{popupInfo.desc}</p>
+                            </div>
+                        </Popup>
+                    )}
+                </Map>
+
+                {/* Floating Controls Overlay */}
+                <div className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur p-4 rounded-lg shadow-lg border border-border">
+                    <h3 className="font-semibold mb-2">Filters</h3>
+                    <div className="flex flex-col gap-2">
+                        <label className="flex items-center space-x-2 text-sm cursor-pointer">
+                            <input type="checkbox" defaultChecked className="accent-primary" />
+                            <span>My Plants</span>
+                        </label>
+                        <label className="flex items-center space-x-2 text-sm cursor-pointer">
+                            <input type="checkbox" defaultChecked className="accent-primary" />
+                            <span>Community</span>
+                        </label>
+                    </div>
+                </div>
+            </Card>
         </div>
     );
 }
