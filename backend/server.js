@@ -7,11 +7,23 @@ const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const jwt = require('jsonwebtoken');
 const session = require('express-session');
+const multer = require('multer');
+const path = require('path');
 
 // Models
 const User = require('./models/User');
 const Action = require('./models/Action');
 const Swap = require('./models/Swap');
+
+// --- Multer config for photo uploads ---
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, path.join(__dirname, 'uploads')),
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname);
+        cb(null, `${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`);
+    }
+});
+const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } }); // 10 MB max
 
 const app = express();
 const PORT = 3001;
@@ -23,6 +35,7 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 }));
 app.use(bodyParser.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(session({
     secret: process.env.JWT_SECRET || 'greenloop-secret',
     resave: false,
@@ -198,6 +211,161 @@ app.get('/api/user/me', authMiddleware, async (req, res) => {
     }
 });
 
+// 1b. Get User Stats (for Chrome Extension popup + CameraPage)
+// Helper to determine next level XP
+function getNextLevelXp(currentXp) {
+    if (currentXp < 100) return 100;
+    if (currentXp < 500) return 500;
+    if (currentXp < 2000) return 2000;
+    if (currentXp < 5000) return 5000;
+    return 10000; // Cap or next milestone
+}
+
+// 1b. Get User Stats (for Chrome Extension popup + CameraPage + Dashboard)
+app.get('/api/user/me/stats', authMiddleware, async (req, res) => {
+    try {
+        const user = await User.findById(req.userId);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        const Swap = require('./models/Swap');
+
+        // Fetch all actions and swaps
+        const [actions, swaps] = await Promise.all([
+            Action.find({ userId: req.userId }).sort({ createdAt: -1 }),
+            Swap.find({ userId: req.userId }).sort({ createdAt: -1 })
+        ]);
+
+        // --- 1. Aggregates ---
+        const totalSwaps = swaps.length;
+        const totalLogs = actions.length;
+        const totalActions = totalSwaps + totalLogs;
+
+        // --- 2. Combined Activity Stream for Calculations ---
+        // Normalize: { date, xp, type, impact }
+        const allEvents = [
+            ...actions.map(a => ({
+                date: new Date(a.createdAt),
+                xp: a.xpGained || 0,
+                type: 'ACTION',
+                actionType: a.actionType
+            })),
+            ...swaps.map(s => ({
+                date: new Date(s.createdAt),
+                xp: s.xp || 100,
+                type: 'SWAP',
+                co2: s.co2Saved || 0,
+                plastic: s.plasticSaved || 0
+            }))
+        ];
+
+        // --- 3. Compute Streak ---
+        let streak = 0;
+        if (allEvents.length > 0) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            // Set of unique days with activity
+            const activeDays = new Set(allEvents.map(e => {
+                const d = new Date(e.date);
+                d.setHours(0, 0, 0, 0);
+                return d.getTime();
+            }));
+
+            let checkDate = new Date(today);
+            // If no activity today, verify if streak is alive from yesterday
+            if (!activeDays.has(checkDate.getTime())) {
+                checkDate.setDate(checkDate.getDate() - 1);
+            }
+            // Count backwards
+            while (activeDays.has(checkDate.getTime())) {
+                streak++;
+                checkDate.setDate(checkDate.getDate() - 1);
+            }
+        }
+
+        // --- 4. Compute Today's XP ---
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const todayXP = allEvents
+            .filter(e => e.date >= todayStart)
+            .reduce((sum, e) => sum + e.xp, 0);
+
+        // --- 5. Compute Weekly XP Data (Last 7 Days) ---
+        // Initialize last 7 days buckets
+        const xpDataRaw = {};
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            d.setHours(0, 0, 0, 0);
+            const key = days[d.getDay()]; // e.g. "Mon"
+            // If we have multiple days with same name (unlikely in 7 days unless edge case), logic still holds for graph
+            // Better to use ISO string for sorting, but frontend expects { name: 'Mon', xp: 0 }
+            // To handle "rolling" 7 days, we'll just push them in order.
+        }
+
+        const statsMap = new Map(); // timestamp -> xp
+        const now = new Date();
+        const xpData = [];
+
+        // create placeholders for last 7 days
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date(now);
+            d.setDate(d.getDate() - i);
+            const dayName = days[d.getDay()];
+            const dateKey = d.toISOString().split('T')[0];
+            xpData.push({ name: dayName, dateKey, xp: 0 });
+        }
+
+        // Fill buckets
+        allEvents.forEach(e => {
+            const dateKey = e.date.toISOString().split('T')[0];
+            const bucket = xpData.find(b => b.dateKey === dateKey);
+            if (bucket) {
+                bucket.xp += e.xp;
+            }
+        });
+
+        // Clean up data for frontend (remove dateKey)
+        const finalXpData = xpData.map(d => ({ name: d.name, xp: d.xp }));
+
+
+        // --- 6. Compute Impact Data ---
+        // Estimate impacts for Actions if not explicitly stored
+        // PLANT: ~5kg CO2 lifetime (conservative)
+        // Others: minimal direct calc, mostly from Swaps
+        const actionCO2 = actions.filter(a => a.actionType === 'PLANT').length * 5;
+
+        const totalCO2 = swaps.reduce((sum, s) => sum + (s.co2Saved || 0), 0) + actionCO2;
+        const totalPlastic = swaps.reduce((sum, s) => sum + (s.plasticSaved || 0), 0);
+
+        const impactData = [
+            { name: 'Activities', value: totalActions, color: '#10B981' },
+            { name: 'CO₂ Saved', value: Math.round(totalCO2 * 10) / 10, color: '#3B82F6' },
+            { name: 'Plastic', value: Math.round(totalPlastic * 10) / 10, color: '#F59E0B' },
+        ];
+        // If values are 0, they won't show on pie chart nicely, but that's handled by frontend check
+
+        res.json({
+            name: user.name,
+            level: user.level || 1,
+            xp: user.totalXP || 0,
+            nextLevelXp: getNextLevelXp(user.totalXP),
+            totalSwaps,
+            streak,
+            todayXP,
+            totalLogs,
+            totalActions,
+            xpData: finalXpData,
+            impactData
+        });
+    } catch (err) {
+        console.error("Stats Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // --- Voice AI Integration (Gemini + ElevenLabs) ---
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
@@ -210,7 +378,7 @@ const { spawn } = require('child_process');
 // --- Helper: Get Embedding ---
 async function getEmbedding(text) {
     try {
-        const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
+        const model = genAI.getGenerativeModel({ model: "gemini-embedding-exp-03-07" });
         const result = await model.embedContent(text);
         return result.embedding.values;
     } catch (e) {
@@ -446,9 +614,21 @@ app.get('/api/user/me/stats', authMiddleware, async (req, res) => {
     }
 });
 
-// 3. Log Action
-app.post('/api/action', authMiddleware, async (req, res) => {
-    const { actionType, details } = req.body;
+// 3. Log Action (supports optional photo upload)
+app.post('/api/action', authMiddleware, upload.single('photo'), async (req, res) => {
+    // With multer, non-file fields come from req.body as strings
+    let actionType, details;
+    try {
+        actionType = req.body.actionType;
+        details = typeof req.body.details === 'string' ? JSON.parse(req.body.details) : (req.body.details || {});
+    } catch (parseErr) {
+        return res.status(400).json({ error: 'Invalid details format' });
+    }
+
+    // If a photo was uploaded, store its URL
+    if (req.file) {
+        details.imageUrl = `/uploads/${req.file.filename}`;
+    }
 
     const xpMap = { PLANT: 50, SWAP: 100, WALK: 30, REFILL: 10, COMPOST: 20, CLEANUP: 40, OBSERVE: 15 };
     const xpGained = xpMap[actionType] || 5;
@@ -462,7 +642,7 @@ app.post('/api/action', authMiddleware, async (req, res) => {
             location: details?.location || null,
         });
 
-        console.log(`[ACTION] ${actionType} logged by ${req.userName}. Location:`, action.location);
+        console.log(`[ACTION] ${actionType} logged by ${req.userName}. Photo: ${details.imageUrl || 'none'}. Location:`, action.location);
 
         // Update user XP
         const user = await User.findById(req.userId);
@@ -606,6 +786,21 @@ app.get('/api/actions', authMiddleware, async (req, res) => {
     }
 });
 
+// 9.1 Gallery - Get actions with photos
+app.get('/api/gallery', authMiddleware, async (req, res) => {
+    try {
+        const actions = await Action.find({
+            userId: req.userId,
+            'details.imageUrl': { $exists: true, $ne: null, $ne: '' }
+        })
+            .sort({ createdAt: -1 })
+            .limit(50);
+        res.json(actions);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // 9.5 Delete an Action
 app.delete('/api/actions/:id', authMiddleware, async (req, res) => {
     console.log(`[DELETE_REQ] Attempting to delete action: ${req.params.id} for user: ${req.userId}`);
@@ -722,6 +917,45 @@ async function getSustainableSwap(productName) {
     }
 }
 
+// --- Hardcoded fallback swaps (used when Gemini quota is exhausted) ---
+const FALLBACK_SWAPS = {
+    'plastic cups': { name: 'Compostable Plant-Based Cups', description: 'Made from PLA cornstarch, fully compostable', ecoScore: 88, searchQuery: 'compostable cups plant based' },
+    'plastic cup': { name: 'Compostable Plant-Based Cups', description: 'Made from PLA cornstarch, fully compostable', ecoScore: 88, searchQuery: 'compostable cups plant based' },
+    'plastic bags': { name: 'Reusable Produce Bags (Mesh)', description: 'Washable mesh bags, eliminates single-use plastic', ecoScore: 92, searchQuery: 'reusable mesh produce bags' },
+    'plastic bag': { name: 'Reusable Produce Bags (Mesh)', description: 'Washable mesh bags, eliminates single-use plastic', ecoScore: 92, searchQuery: 'reusable mesh produce bags' },
+    'water bottle': { name: 'Hydro Flask Stainless Steel Bottle', description: 'Insulated, BPA-free, lasts for years', ecoScore: 95, searchQuery: 'hydro flask stainless steel water bottle' },
+    'plastic water bottle': { name: 'Hydro Flask Stainless Steel Bottle', description: 'Insulated, BPA-free, lasts for years', ecoScore: 95, searchQuery: 'hydro flask stainless steel water bottle' },
+    'paper towels': { name: 'Swedish Dishcloths (Reusable)', description: 'Replaces 17 rolls of paper towels each', ecoScore: 90, searchQuery: 'swedish dishcloths reusable' },
+    'plastic straws': { name: 'Stainless Steel Reusable Straws', description: 'Dishwasher safe, includes cleaning brush', ecoScore: 93, searchQuery: 'reusable stainless steel straws' },
+    'straw': { name: 'Stainless Steel Reusable Straws', description: 'Dishwasher safe, includes cleaning brush', ecoScore: 93, searchQuery: 'reusable stainless steel straws' },
+    'disposable plates': { name: 'Palm Leaf Compostable Plates', description: 'Naturally fallen palm leaves, chemical-free', ecoScore: 91, searchQuery: 'palm leaf compostable plates' },
+    'plastic wrap': { name: 'Beeswax Food Wraps', description: 'Natural, reusable alternative to cling film', ecoScore: 89, searchQuery: 'beeswax food wraps reusable' },
+    'saran wrap': { name: 'Beeswax Food Wraps', description: 'Natural, reusable alternative to cling film', ecoScore: 89, searchQuery: 'beeswax food wraps reusable' },
+    'cling wrap': { name: 'Beeswax Food Wraps', description: 'Natural, reusable alternative to cling film', ecoScore: 89, searchQuery: 'beeswax food wraps reusable' },
+    'shampoo': { name: 'Ethique Shampoo Bar', description: 'Zero-plastic, concentrated, lasts 3x longer', ecoScore: 87, searchQuery: 'ethique shampoo bar eco friendly' },
+    'toothbrush': { name: 'Bamboo Toothbrush (4-Pack)', description: 'Biodegradable handles, BPA-free bristles', ecoScore: 86, searchQuery: 'bamboo toothbrush biodegradable' },
+    'trash bags': { name: 'UNNI Compostable Trash Bags', description: 'Certified compostable, plant-based material', ecoScore: 85, searchQuery: 'compostable trash bags UNNI' },
+    'laundry detergent': { name: 'Earth Breeze Laundry Sheets', description: 'Zero-plastic packaging, biodegradable formula', ecoScore: 90, searchQuery: 'earth breeze laundry detergent sheets' },
+    'deodorant': { name: 'Native Natural Deodorant', description: 'Aluminum-free, recyclable packaging', ecoScore: 84, searchQuery: 'native natural deodorant sustainable' },
+    'coffee cups': { name: 'KeepCup Reusable Coffee Cup', description: 'Barista-standard, saves 500+ cups/year', ecoScore: 94, searchQuery: 'keepcup reusable coffee cup' },
+    'k cups': { name: 'Reusable K-Cup Coffee Filter', description: 'Fill with your own grounds, zero waste', ecoScore: 91, searchQuery: 'reusable k cup coffee filter' },
+    'ziplock bags': { name: 'Stasher Silicone Reusable Bags', description: 'Platinum silicone, dishwasher/microwave safe', ecoScore: 92, searchQuery: 'stasher silicone reusable bags' },
+    'sandwich bags': { name: 'Stasher Silicone Reusable Bags', description: 'Platinum silicone, dishwasher/microwave safe', ecoScore: 92, searchQuery: 'stasher silicone reusable sandwich bags' },
+    'cleaning spray': { name: 'Blueland Cleaning Kit', description: 'Reusable bottle + dissolvable cleaning tablets', ecoScore: 88, searchQuery: 'blueland cleaning spray refillable' },
+    'sponge': { name: 'Eco-Friendly Cellulose Sponges', description: 'Compostable plant-based, no microplastics', ecoScore: 85, searchQuery: 'compostable cellulose sponges eco' },
+};
+
+function getFallbackSwap(query) {
+    const lower = query.toLowerCase().trim();
+    // Exact match first
+    if (FALLBACK_SWAPS[lower]) return FALLBACK_SWAPS[lower];
+    // Partial match
+    for (const [key, swap] of Object.entries(FALLBACK_SWAPS)) {
+        if (lower.includes(key) || key.includes(lower)) return swap;
+    }
+    return null;
+}
+
 app.get('/api/products/search', async (req, res) => {
     const query = req.query.q?.toLowerCase();
     // console.log(`[SEARCH] Query received: "${query}"`); 
@@ -747,11 +981,39 @@ app.get('/api/products/search', async (req, res) => {
             });
         } else {
             console.log(`[SEARCH] AI determined "${query}" is already the best option or unknown.`);
-            res.json({ found: false });
+            // Try fallback before giving up
+            const fallback = getFallbackSwap(query);
+            if (fallback) {
+                console.log(`[SEARCH] Using fallback swap for "${query}": ${fallback.name}`);
+                res.json({
+                    found: true,
+                    original: { name: query },
+                    swap: {
+                        ...fallback,
+                        image: `https://placehold.co/400x300/e2e8f0/1e293b?text=${encodeURIComponent(fallback.name)}`
+                    }
+                });
+            } else {
+                res.json({ found: false });
+            }
         }
     } catch (e) {
         console.error("Search Handler Error:", e);
-        res.json({ found: false });
+        // Try fallback on any error (including quota exhaustion)
+        const fallback = getFallbackSwap(query);
+        if (fallback) {
+            console.log(`[SEARCH] Using fallback swap for "${query}": ${fallback.name}`);
+            res.json({
+                found: true,
+                original: { name: query },
+                swap: {
+                    ...fallback,
+                    image: `https://placehold.co/400x300/e2e8f0/1e293b?text=${encodeURIComponent(fallback.name)}`
+                }
+            });
+        } else {
+            res.json({ found: false });
+        }
     }
 });
 

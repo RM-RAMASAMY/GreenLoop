@@ -155,9 +155,37 @@ function injectBanner(fullData) {
     });
 }
 
+// Filter out page slogans, generic text, and non-product queries
+function isValidProductQuery(query) {
+    if (!query || query.length < 3 || query.length > 200) return false;
+
+    // Block known Amazon/Walmart boilerplate text
+    const blocklist = [
+        'amazon.com', 'spend less', 'smile more', 'shipping made easy',
+        'walmart.com', 'save money', 'live better', 'delivering to',
+        'hello, sign in', 'returns & orders', 'cart', 'your lists',
+        'today\'s deals', 'customer service', 'registry', 'gift cards',
+        'sell', 'all', 'buy again', 'browsing history',
+    ];
+    const lower = query.toLowerCase();
+    if (blocklist.some(b => lower.includes(b))) return false;
+
+    // Must have at least 2 word characters (filters out single chars, punctuation noise)
+    const words = query.split(/\s+/).filter(w => w.length > 1);
+    if (words.length < 1) return false;
+
+    return true;
+}
+
 async function checkProduct() {
     const title = getProductTitle();
     if (!title || title === lastCheckedTitle) return;
+
+    // Don't waste API calls on non-product text
+    if (!isValidProductQuery(title)) {
+        console.log('GreenLoop skipping non-product text:', title.substring(0, 50));
+        return;
+    }
 
     lastCheckedTitle = title;
     console.log('GreenLoop checking product/search:', title);
@@ -203,7 +231,7 @@ setTimeout(checkProduct, 2000);
 
 // 2. Periodic Check (for SPA navigation)
 // Increase frequency slightly to be more responsive
-setInterval(checkProduct, 2000);
+setInterval(checkProduct, 5000);
 
 // 3. MutationObserver (optional, but good for catching dynamic load)
 // We rely on setInterval for now to avoid complexity with debouncing large DOM changes

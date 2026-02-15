@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useSearchParams } from 'react-router-dom';
-import { LayoutDashboard, Map as MapIcon, Camera, Trophy, Leaf, User, Sprout, Newspaper, ArrowRightLeft, Settings, LogOut, Bot } from 'lucide-react';
+import { LayoutDashboard, Map as MapIcon, Camera, Trophy, Leaf, User, Sprout, Newspaper, ArrowRightLeft, Settings, LogOut, Bot, Image, Users } from 'lucide-react';
 import HomePage from './pages/HomePage';
 import MapPage from './pages/MapPage';
 import GreenManPage from './pages/GreenManPage';
@@ -9,6 +9,8 @@ import LeaderboardPage from './pages/LeaderboardPage';
 import ProfilePage from './pages/ProfilePage';
 import NurseriesPage from './pages/NurseriesPage';
 import NewsPage from './pages/NewsPage';
+import GalleryPage from './pages/GalleryPage';
+import CommunityPage from './pages/CommunityPage';
 import EcoSwapPage from './pages/EcoSwapPage';
 import SettingsPage from './pages/SettingsPage';
 import LoginPage from './pages/LoginPage';
@@ -35,6 +37,8 @@ function Sidebar({ user, onLogout }) {
                 <NavItem to="/map" icon={<MapIcon size={20} />} label="Conservation Map" active={isActive('/map')} />
                 <NavItem to="/green-man" icon={<Bot size={20} />} label="The Green Man" active={isActive('/green-man')} />
                 <NavItem to="/camera" icon={<Camera size={20} />} label="Log Activity" active={isActive('/camera')} />
+                <NavItem to="/gallery" icon={<Image size={20} />} label="Gallery" active={isActive('/gallery')} />
+                <NavItem to="/community" icon={<Users size={20} />} label="Community" active={isActive('/community')} />
                 <NavItem to="/leaderboard" icon={<Trophy size={20} />} label="Leaderboard" active={isActive('/leaderboard')} />
                 <NavItem to="/nurseries" icon={<Sprout size={20} />} label="Plant Nurseries" active={isActive('/nurseries')} />
                 <NavItem to="/news" icon={<Newspaper size={20} />} label="Eco News" active={isActive('/news')} />
@@ -98,6 +102,8 @@ function AppContent({ user, token, onLogout }) {
                     <Route path="/map" element={<MapPage token={token} />} />
                     <Route path="/green-man" element={<GreenManPage token={token} />} />
                     <Route path="/camera" element={<CameraPage token={token} />} />
+                    <Route path="/gallery" element={<GalleryPage token={token} />} />
+                    <Route path="/community" element={<CommunityPage />} />
                     <Route path="/leaderboard" element={<LeaderboardPage token={token} />} />
                     <Route path="/profile" element={<ProfilePage token={token} user={user} />} />
                     <Route path="/nurseries" element={<NurseriesPage />} />

@@ -124,28 +124,30 @@ export default function CameraPage({ token }) {
         setLoading(true);
 
         try {
-            // Post to real backend with auth
+            // Post to real backend with auth (using FormData to support photo upload)
             const actionMap = { plant: 'PLANT', commute: 'WALK', recycle: 'COMPOST', water: 'REFILL', reusable: 'SWAP', energy: 'OTHER' };
             if (token) {
                 try {
+                    const formData = new FormData();
+                    formData.append('actionType', actionMap[selectedType.id] || 'OTHER');
+                    formData.append('details', JSON.stringify({
+                        plantName: selectedType.id === 'plant' ? plantName : selectedType.label,
+                        plantType: selectedType.id === 'plant' ? plantType : null,
+                        title: selectedType.id === 'plant' ? plantTitle : null,
+                        description,
+                        location: location.lat && location.lng
+                            ? { lat: parseFloat(location.lat), lng: parseFloat(location.lng) }
+                            : null
+                    }));
+                    if (file) {
+                        formData.append('photo', file);
+                    }
                     await fetch(`${API_URL}/api/action`, {
                         method: 'POST',
                         headers: {
-                            'Content-Type': 'application/json',
                             Authorization: `Bearer ${token}`
                         },
-                        body: JSON.stringify({
-                            actionType: actionMap[selectedType.id] || 'OTHER',
-                            details: {
-                                plantName: selectedType.id === 'plant' ? plantName : selectedType.label,
-                                plantType: selectedType.id === 'plant' ? plantType : null,
-                                title: selectedType.id === 'plant' ? plantTitle : null,
-                                description,
-                                location: location.lat && location.lng
-                                    ? { lat: parseFloat(location.lat), lng: parseFloat(location.lng) }
-                                    : null
-                            }
-                        })
+                        body: formData
                     });
                 } catch (apiErr) {
                     console.error('API Error:', apiErr);
