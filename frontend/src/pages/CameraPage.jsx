@@ -173,9 +173,9 @@ export default function CameraPage({ token }) {
         }
     };
 
-    const todayXP = stats.todayXP;
-    const streak = stats.streak;
-    const totalLogs = stats.totalLogs;
+    const todayXP = stats?.todayXP || 0;
+    const streak = stats?.streak || 0;
+    const totalLogs = stats?.totalLogs || 0;
 
     return (
         <div className="max-w-3xl mx-auto space-y-8">

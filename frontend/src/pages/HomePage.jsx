@@ -36,7 +36,7 @@ export default function HomePage({ token }) {
             .catch(err => console.error('Dashboard fetch error:', err));
     }, [token]);
 
-    const xpProgress = stats.nextLevelXp > 0 ? Math.round((stats.xp / stats.nextLevelXp) * 100) : 0;
+    const xpProgress = stats?.nextLevelXp > 0 ? Math.round((stats.xp / stats.nextLevelXp) * 100) : 0;
 
     return (
         <div className="space-y-8">
@@ -56,12 +56,12 @@ export default function HomePage({ token }) {
                             </div>
                         </div>
                         <div className="flex items-baseline space-x-2">
-                            <div className="text-2xl font-bold text-emerald-600">{stats.xp.toLocaleString()}</div>
+                            <div className="text-2xl font-bold text-emerald-600">{(stats?.xp || 0).toLocaleString()}</div>
                             <span className="text-xs text-muted-foreground">XP</span>
                         </div>
                         <div className="flex items-center text-xs text-muted-foreground mt-1">
                             <TrendingUp className="mr-1 h-3 w-3 text-emerald-500" />
-                            <span className="text-emerald-500 font-medium">{stats.totalActions}</span>
+                            <span className="text-emerald-500 font-medium">{stats?.totalActions || 0}</span>
                             <span className="ml-1">activities logged</span>
                         </div>
                     </CardContent>

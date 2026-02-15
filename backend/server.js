@@ -360,13 +360,13 @@ app.delete('/api/actions/:id', authMiddleware, async (req, res) => {
             if (updatedUser.totalXP < 0) updatedUser.totalXP = 0;
             updatedUser.calculateLevel();
             await updatedUser.save();
-            console.log(`[DELETE] Action ${req.params.id} deleted. Subtracted ${xpToSubtract} XP. New total: ${updatedUser.totalXP}`);
+             console.log(`[DELETE] Action ${req.params.id} deleted. Subtracted ${xpToSubtract} XP. New total: ${updatedUser.totalXP}`);
         }
 
         res.json({
             success: true,
             message: 'Action deleted and XP updated',
-            newTotal: user ? user.totalXP : null
+            newTotal: updatedUser ? updatedUser.totalXP : null
         });
     } catch (err) {
         console.error('[DELETE_ERR]', err);
