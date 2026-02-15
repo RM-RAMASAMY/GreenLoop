@@ -203,7 +203,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-flash-lite-latest" });
 
 const { spawn } = require('child_process');
 
@@ -685,15 +685,15 @@ async function getSustainableSwap(productName) {
     const prompt = `
     Analyze the product: "${productName}".
     
-    1. Is this product generally considered non-sustainable or single-use plastic? (Boolean)
-    2. If yes, suggest ONE specific, highly-rated sustainable alternative product name.
+    1. Is there a more eco-friendly or sustainable alternative to this product? (Boolean)
+    2. Suggest ONE specific, highly-rated sustainable alternative product name.
     3. Provide a short, punchy reason why it's better (max 10 words).
     4. Estimate an EcoScore (0-100) for the alternative.
     5. Provide a search query string to find this alternative on Amazon.
 
     Output PURE JSON format only:
     {
-        "isNonSustainable": boolean,
+        "hasBetterAlternative": boolean,
         "originalName": string,
         "swap": {
             "name": string,
@@ -702,7 +702,7 @@ async function getSustainableSwap(productName) {
             "searchQuery": string
         }
     }
-    If the product is already sustainable or not clear, set "isNonSustainable": false.
+    If the product is already the best option, set "hasBetterAlternative": false.
     `;
 
     try {
@@ -718,7 +718,7 @@ async function getSustainableSwap(productName) {
         return JSON.parse(jsonStr);
     } catch (error) {
         console.error("Gemini Error:", error);
-        return { isNonSustainable: false };
+        return { hasBetterAlternative: false };
     }
 }
 
@@ -732,10 +732,10 @@ app.get('/api/products/search', async (req, res) => {
     try {
         const aiResult = await getSustainableSwap(query);
 
-        if (aiResult.isNonSustainable) {
+        if (aiResult.hasBetterAlternative) {
             // Mock image for now, real image API is complex without scraping
-            // We'll use a generic placeholder or try to guess based on keyword
-            let image = 'https://m.media-amazon.com/images/I/71wF7xS5ZAL._AC_SL1500_.jpg'; // Default generic bottle
+            // Using a reliable placeholder service with a relevant text
+            let image = `https://placehold.co/400x300/e2e8f0/1e293b?text=${encodeURIComponent(aiResult.swap.name)}`;
 
             res.json({
                 found: true,
@@ -746,7 +746,7 @@ app.get('/api/products/search', async (req, res) => {
                 }
             });
         } else {
-            console.log(`[SEARCH] AI determined "${query}" is sustainable or unknown.`);
+            console.log(`[SEARCH] AI determined "${query}" is already the best option or unknown.`);
             res.json({ found: false });
         }
     } catch (e) {

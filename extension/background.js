@@ -13,6 +13,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         handleLogAction(request.token, request.payload, sendResponse);
         return true; // Keep channel open
     }
+
+    if (request.type === 'LOG_SWAP') {
+        handleLogSwap(request.token, request.payload, sendResponse);
+        return true;
+    }
 });
 
 async function handleSearch(query, sendResponse) {
@@ -51,6 +56,33 @@ async function handleLogAction(token, payload, sendResponse) {
         sendResponse({ success: true, data });
     } catch (error) {
         console.error('[BG] Log Action error:', error);
+        sendResponse({ success: false, error: error.message });
+    }
+}
+
+async function handleLogSwap(token, payload, sendResponse) {
+    try {
+        console.log(`[BG] Logging swap:`, payload);
+        const response = await fetch(`${SERVER_URL}/api/swaps`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (response.status === 401) {
+            sendResponse({ success: false, error: 'Unauthorized', status: 401 });
+            return;
+        }
+
+        if (!response.ok) throw new Error(`Server error: ${response.status}`);
+
+        const data = await response.json();
+        sendResponse({ success: true, data });
+    } catch (error) {
+        console.error('[BG] Log Swap error:', error);
         sendResponse({ success: false, error: error.message });
     }
 }

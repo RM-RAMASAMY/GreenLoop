@@ -42,8 +42,26 @@ function getProductTitle() {
     return document.title;
 }
 
-function injectBanner(swapData) {
+const CATEGORIES = {
+    'Hydration': ['bottle', 'cup', 'mug', 'flask', 'jug', 'water'],
+    'Kitchen': ['straw', 'fork', 'spoon', 'knife', 'cutlery', 'plate', 'bowl', 'container', 'bag', 'wrap', 'sponge', 'towel'],
+    'Personal Care': ['shampoo', 'soap', 'toothbrush', 'paste', 'razor', 'floss', 'deodorant', 'pad', 'tampon'],
+    'Shopping': ['bag', 'tote', 'sack', 'cart']
+};
+
+function inferCategory(name) {
+    name = name.toLowerCase();
+    for (const [cat, keywords] of Object.entries(CATEGORIES)) {
+        if (keywords.some(k => name.includes(k))) return cat;
+    }
+    return 'Other';
+}
+
+function injectBanner(fullData) {
     if (document.getElementById('greenloop-banner')) return;
+
+    const swapData = fullData.swap;
+    const originalName = fullData.original.name;
 
     const banner = document.createElement('div');
     banner.id = 'greenloop-banner';
@@ -93,12 +111,21 @@ function injectBanner(swapData) {
             }
 
             // 2. Log action to backend via Background Script
+            // 2. Log action as SWAP to backend via Background Script
+            const category = inferCategory(originalName);
+
             chrome.runtime.sendMessage({
-                type: 'LOG_ACTION',
+                type: 'LOG_SWAP', // Changed from LOG_ACTION
                 token: token,
                 payload: {
-                    actionType: 'SWAP',
-                    details: { productName: swapData.name }
+                    original: originalName,
+                    swap: swapData.name,
+                    category: category,
+                    ecoScoreBefore: 20, // Estimated default for non-sustainable items
+                    ecoScoreAfter: swapData.ecoScore || 90,
+                    xp: 100,
+                    co2Saved: 0.5, // Default estimate
+                    plasticSaved: 15 // Default estimate
                 }
             }, (response) => {
                 if (chrome.runtime.lastError) {
@@ -150,7 +177,10 @@ async function checkProduct() {
                 const data = response.data;
                 if (data.found) {
                     console.log('GreenLoop swap found:', data.swap.name);
-                    injectBanner(data.swap);
+                    if (data.found) {
+                        console.log('GreenLoop swap found:', data.swap.name);
+                        injectBanner(data); // Pass full data object
+                    }
                 }
             }
         });
