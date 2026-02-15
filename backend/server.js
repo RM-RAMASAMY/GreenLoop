@@ -6,6 +6,7 @@ const mongoose = require('mongoose');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const jwt = require('jsonwebtoken');
+const session = require('express-session');
 
 // Models
 const User = require('./models/User');
@@ -17,11 +18,17 @@ const PORT = 3001;
 
 // --- Middleware ---
 app.use(cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: true, // Allow all origins (including chrome-extension://)
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 }));
 app.use(bodyParser.json());
+app.use(session({
+    secret: process.env.JWT_SECRET || 'greenloop-secret',
+    resave: false,
+    saveUninitialized: true,
+    cookie: { secure: false } // Set to true if using https
+}));
 
 // --- MongoDB Connection ---
 mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/greenloop')
@@ -82,20 +89,71 @@ function authMiddleware(req, res, next) {
 // --- Auth Routes ---
 
 // Start Google OAuth flow
-app.get('/auth/google', passport.authenticate('google', {
-    scope: ['profile', 'email'],
-    session: false,
-}));
+app.get('/auth/google', (req, res, next) => {
+    // Store source in session
+    if (req.query.source) {
+        req.session.authSource = req.query.source;
+        console.log('[AUTH] Source set to:', req.session.authSource);
+    }
+    // Pass to passport
+    passport.authenticate('google', {
+        scope: ['profile', 'email'],
+        session: false // We still manage our own JWT session, but use express-session for temporary state
+    })(req, res, next);
+});
 
 // Google OAuth callback
 app.get('/auth/google/callback',
     passport.authenticate('google', { session: false, failureRedirect: `${process.env.FRONTEND_URL || 'http://localhost:5173'}?error=auth_failed` }),
     (req, res) => {
+        console.log('[AUTH_DEBUG] Callback Query:', req.query); // DEBUG
         const token = generateToken(req.user);
-        // Redirect to frontend with token
-        res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}?token=${token}`);
+
+        // Check session for source
+        const source = req.session.authSource;
+        console.log('[AUTH_DEBUG] Session Source:', source); // DEBUG
+
+        if (source === 'extension') {
+            // Clear session source
+            req.session.authSource = null;
+            // Redirect to special extension success page
+            res.redirect(`${process.env.BACKEND_URL || 'http://localhost:3001'}/auth/extension/success?token=${token}&name=${encodeURIComponent(req.user.name)}`);
+        } else {
+            // Redirect to frontend with token
+            res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}?token=${token}`);
+        }
     }
 );
+
+// Extension Success Page (Token Capture)
+app.get('/auth/extension/success', (req, res) => {
+    const { token, name } = req.query;
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Login Successful</title>
+            <style>
+                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; padding: 50px; background: #f0fdf4; color: #166534; }
+                h1 { margin-bottom: 10px; }
+                p { color: #15803d; }
+                .token-box { background: #fff; padding: 15px; border-radius: 8px; border: 1px solid #bbf7d0; word-break: break-all; display: none; }
+            </style>
+        </head>
+        <body>
+            <h1>🌿 GreenLoop</h1>
+            <h2>Login Successful!</h2>
+            <p>Welcome back, ${name || 'EcoWarrior'}.</p>
+            <p>You can now close this tab and return to the extension.</p>
+            <div id="token" style="display:none;">${token}</div>
+            <script>
+                // The content script will read this div
+                console.log("Login successful. Ready for capture.");
+            </script>
+        </body>
+        </html>
+    `);
+});
 
 // Demo login (for development without Google OAuth configured)
 app.post('/auth/demo-login', async (req, res) => {
@@ -145,6 +203,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 const { spawn } = require('child_process');
 
@@ -621,22 +680,77 @@ app.get('/api/plants', async (req, res) => {
 });
 
 // 11. Product Search (for Chrome Extension — public)
-const products = [
-    { id: 'p1', name: 'Plastic Water Bottle', category: 'Hydration', ecoScore: 10, keywords: ['plastic', 'disposable', 'water bottle'], swap: { name: 'Stainless Steel Bottle', ecoScore: 95, description: 'Lasts a lifetime, keeps water cold.' } },
-    { id: 'p2', name: 'Head & Shoulders Shampoo', category: 'Personal Care', ecoScore: 30, keywords: ['shampoo', 'plastic bottle', 'head & shoulders'], swap: { name: 'Ethique Shampoo Bar', ecoScore: 98, description: 'Plastic-free, concentrated, lasts longer.' } },
-    { id: 'p3', name: 'Plastic Toothbrush', category: 'Personal Care', ecoScore: 20, keywords: ['toothbrush', 'plastic brush', 'oral care'], swap: { name: 'Bamboo Toothbrush', ecoScore: 99, description: 'Biodegradable handle, natural bristles.' } },
-    { id: 'p4', name: 'Plastic Straws', category: 'Kitchen', ecoScore: 5, keywords: ['straw', 'plastic straw'], swap: { name: 'Stainless Steel Straws', ecoScore: 95, description: 'Reusable, easy to clean.' } },
-    { id: 'p5', name: 'Plastic Grocery Bag', category: 'Shopping', ecoScore: 10, keywords: ['bag', 'shopping bag', 'plastic bag'], swap: { name: 'Organic Cotton Tote', ecoScore: 92, description: 'Durable, replaces 1000+ bags.' } },
-    { id: 'p6', name: 'Plastic Cutlery', category: 'Kitchen', ecoScore: 15, keywords: ['fork', 'spoon', 'knife', 'cutlery'], swap: { name: 'Bamboo Travel Cutlery', ecoScore: 97, description: 'Lightweight, sustainable.' } },
-];
+// 11. Product Search (AI Powered)
+async function getSustainableSwap(productName) {
+    const prompt = `
+    Analyze the product: "${productName}".
+    
+    1. Is this product generally considered non-sustainable or single-use plastic? (Boolean)
+    2. If yes, suggest ONE specific, highly-rated sustainable alternative product name.
+    3. Provide a short, punchy reason why it's better (max 10 words).
+    4. Estimate an EcoScore (0-100) for the alternative.
+    5. Provide a search query string to find this alternative on Amazon.
 
-app.get('/api/products/search', (req, res) => {
+    Output PURE JSON format only:
+    {
+        "isNonSustainable": boolean,
+        "originalName": string,
+        "swap": {
+            "name": string,
+            "description": string,
+            "ecoScore": number,
+            "searchQuery": string
+        }
+    }
+    If the product is already sustainable or not clear, set "isNonSustainable": false.
+    `;
+
+    try {
+        console.log(`[AI] Generating content for: ${prompt.substring(0, 50)}...`);
+        const result = await model.generateContent(prompt);
+        console.log('[AI] Result received');
+        const response = await result.response;
+        const text = response.text();
+        console.log('[AI] Text:', text);
+
+        // Clean markdown code blocks if present
+        const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        return JSON.parse(jsonStr);
+    } catch (error) {
+        console.error("Gemini Error:", error);
+        return { isNonSustainable: false };
+    }
+}
+
+app.get('/api/products/search', async (req, res) => {
     const query = req.query.q?.toLowerCase();
+    // console.log(`[SEARCH] Query received: "${query}"`); 
+
     if (!query) return res.json([]);
-    const match = products.find(p => p.keywords.some(k => query.includes(k)));
-    if (match) {
-        res.json({ found: true, original: { name: match.name, ecoScore: match.ecoScore }, swap: match.swap });
-    } else {
+
+    // AI Search
+    try {
+        const aiResult = await getSustainableSwap(query);
+
+        if (aiResult.isNonSustainable) {
+            // Mock image for now, real image API is complex without scraping
+            // We'll use a generic placeholder or try to guess based on keyword
+            let image = 'https://m.media-amazon.com/images/I/71wF7xS5ZAL._AC_SL1500_.jpg'; // Default generic bottle
+
+            res.json({
+                found: true,
+                original: { name: aiResult.originalName },
+                swap: {
+                    ...aiResult.swap,
+                    image: image
+                }
+            });
+        } else {
+            console.log(`[SEARCH] AI determined "${query}" is sustainable or unknown.`);
+            res.json({ found: false });
+        }
+    } catch (e) {
+        console.error("Search Handler Error:", e);
         res.json({ found: false });
     }
 });

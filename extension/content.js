@@ -1,17 +1,45 @@
 // Basic GreenLoop Content Script
 
-const SERVER_URL = 'http://localhost:3001';
+// Basic GreenLoop Content Script
+
+// SERVER_URL is now handled in background.js
+
+// Keep track of the last checked title to avoid spamming the backend
+let lastCheckedTitle = '';
 
 function getProductTitle() {
-    // Amazon
+    // 1. Amazon Product Page
     const amazonTitle = document.getElementById('productTitle');
     if (amazonTitle) return amazonTitle.innerText.trim();
 
-    // Walmart (selectors might vary, using a generic guess for now or specific if known)
-    const walmartTitle = document.querySelector('h1');
+    // 2. Amazon Search Page (extract from URL or search bar)
+    const urlParams = new URLSearchParams(window.location.search);
+    if (window.location.hostname.includes('amazon')) {
+        // Try getting search bar value first as it's most accurate
+        const searchBar = document.getElementById('twotabsearchtextbox');
+        if (searchBar && searchBar.value) return searchBar.value.trim();
+
+        if (urlParams.has('k')) {
+            return decodeURIComponent(urlParams.get('k').replace(/\+/g, ' '));
+        }
+    }
+
+    // 3. Walmart Product Page
+    const walmartTitle = document.querySelector('[itemprop="name"]') || document.querySelector('h1');
     if (walmartTitle) return walmartTitle.innerText.trim();
 
-    return null;
+    // 4. Walmart Search Page
+    if (window.location.hostname.includes('walmart')) {
+        const searchBar = document.querySelector('input[type="search"]');
+        if (searchBar && searchBar.value) return searchBar.value.trim();
+
+        if (urlParams.has('q')) {
+            return decodeURIComponent(urlParams.get('q'));
+        }
+    }
+
+    // 5. Fallback: Document Title
+    return document.title;
 }
 
 function injectBanner(swapData) {
@@ -44,21 +72,55 @@ function injectBanner(swapData) {
     document.body.appendChild(banner);
 
     document.getElementById('gl-swap-btn').addEventListener('click', () => {
-        // Log action to backend
-        fetch(`${SERVER_URL}/api/action`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                userId: 'user1', // Hardcoded for MVP
-                actionType: 'SWAP',
-                details: { productName: swapData.name }
-            })
-        })
-            .then(res => res.json())
-            .then(data => {
-                alert(`You earned ${data.xpGained} EcoXP! New Level: ${data.newLevel}`);
-            })
-            .catch(err => console.error('Error logging swap:', err));
+        // 0. Redirect to Swap (New Feature)
+        if (swapData.searchQuery) {
+            const searchUrl = `https://www.amazon.com/s?k=${encodeURIComponent(swapData.searchQuery)}`;
+            window.open(searchUrl, '_blank');
+        } else {
+            // Fallback if no query
+            const searchUrl = `https://www.amazon.com/s?k=${encodeURIComponent(swapData.name)}`;
+            window.open(searchUrl, '_blank');
+        }
+
+        // 1. Get token from storage
+        chrome.storage.local.get(['greenloop_token'], (result) => {
+            const token = result.greenloop_token;
+
+            if (!token) {
+                // Not logged in -> Prompt user
+                alert("Please log in to GreenLoop via the extension icon to track your impact!");
+                return;
+            }
+
+            // 2. Log action to backend via Background Script
+            chrome.runtime.sendMessage({
+                type: 'LOG_ACTION',
+                token: token,
+                payload: {
+                    actionType: 'SWAP',
+                    details: { productName: swapData.name }
+                }
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('Runtime error:', chrome.runtime.lastError);
+                    return;
+                }
+
+                if (!response || !response.success) {
+                    if (response && response.status === 401) {
+                        alert("Session expired. Please log in again.");
+                    } else {
+                        console.error('Error logging swap:', response ? response.error : 'Unknown error');
+                    }
+                    return;
+                }
+
+                const data = response.data;
+                if (data) {
+                    alert(`You earned ${data.xpGained} EcoXP! New Level: ${data.newLevel}`);
+                }
+            });
+        });
     });
 
     document.getElementById('gl-close').addEventListener('click', () => {
@@ -68,24 +130,52 @@ function injectBanner(swapData) {
 
 async function checkProduct() {
     const title = getProductTitle();
-    if (!title) return;
+    if (!title || title === lastCheckedTitle) return;
 
-    console.log('GreenLoop checking product:', title);
+    lastCheckedTitle = title;
+    console.log('GreenLoop checking product/search:', title);
 
     try {
-        const response = await fetch(`${SERVER_URL}/api/products/search?q=${encodeURIComponent(title)}`);
-        const data = await response.json();
+        // Send message to background script
+        chrome.runtime.sendMessage({ type: 'SEARCH_PRODUCT', query: title }, (response) => {
+            if (chrome.runtime.lastError) {
+                // Suppress harmless context invalidation errors during reloads
+                if (!chrome.runtime.lastError.message.includes('Extension context invalidated')) {
+                    console.warn('GreenLoop Runtime Warning:', chrome.runtime.lastError);
+                }
+                return;
+            }
 
-        if (data.found) {
-            console.log('GreenLoop swap found:', data.swap);
-            injectBanner(data.swap);
-        }
+            if (response && response.success && response.data) {
+                const data = response.data;
+                if (data.found) {
+                    console.log('GreenLoop swap found:', data.swap.name);
+                    injectBanner(data.swap);
+                }
+            }
+        });
     } catch (error) {
-        console.error('GreenLoop connection error:', error);
+        console.error('GreenLoop init error:', error);
     }
 }
 
-// Run on load
-window.addEventListener('load', () => {
-    setTimeout(checkProduct, 1000); // Slight delay for dynamic loading
-});
+// --- Init & Observers ---
+
+// 1. Initial Check
+// Run immediately if document is already loaded
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    checkProduct();
+} else {
+    window.addEventListener('load', checkProduct);
+}
+// Also run a bit later for safe measure
+setTimeout(checkProduct, 2000);
+
+// 2. Periodic Check (for SPA navigation)
+// Increase frequency slightly to be more responsive
+setInterval(checkProduct, 2000);
+
+// 3. MutationObserver (optional, but good for catching dynamic load)
+// We rely on setInterval for now to avoid complexity with debouncing large DOM changes
+
+
