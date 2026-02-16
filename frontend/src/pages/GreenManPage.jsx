@@ -23,6 +23,11 @@ export default function GreenManPage({ token }) {
         isConversationActiveRef.current = isConversationActive;
     }, [isConversationActive]);
 
+    const isSpeakingRef = useRef(false);
+    useEffect(() => {
+        isSpeakingRef.current = isSpeaking;
+    }, [isSpeaking]);
+
     // Speech Recognition Setup
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = useRef(SpeechRecognition ? new SpeechRecognition() : null);
@@ -30,7 +35,7 @@ export default function GreenManPage({ token }) {
     useEffect(() => {
         if (recognition.current) {
             recognition.current.continuous = false;
-            recognition.current.interimResults = false;
+            recognition.current.interimResults = true;
             recognition.current.lang = 'en-US';
 
             recognition.current.onstart = () => {
@@ -41,9 +46,20 @@ export default function GreenManPage({ token }) {
                 stopAudioStream();
             };
             recognition.current.onresult = (event) => {
-                const text = event.results[0][0].transcript;
+                const result = event.results[0];
+                const text = result[0].transcript;
+                const isFinal = result.isFinal;
+
+                // Barge-in: Stop speaking immediately on ANY sound (interim or final)
+                if (isSpeakingRef.current) {
+                    stopSpeaking();
+                }
+
                 setTranscript(text);
-                handleSendMessage(text);
+
+                if (isFinal) {
+                    handleSendMessage(text);
+                }
             };
         }
         return () => {
@@ -68,11 +84,27 @@ export default function GreenManPage({ token }) {
                 audio.onended = () => {
                     setIsSpeaking(false);
                     if (isConversationActiveRef.current) {
+                        // Restart listening loop
                         setIsListening(true);
-                        recognition.current?.start();
+                        try {
+                            recognition.current?.start();
+                        } catch (e) { console.error("Restart recognition error:", e); }
                     }
                 };
                 audio.play();
+
+                // Start listening immediately for barge-in
+                if (isConversationActiveRef.current) {
+                    (async () => {
+                        // Ensure mic is ready for barge-in identification
+                        if (!audioStream) await startAudioStream();
+                        setIsListening(true);
+                        try {
+                            recognition.current?.start();
+                        } catch (e) { /* ignore already started errors */ }
+                    })();
+                }
+
                 return;
             } catch (e) {
                 console.error("Audio playback error:", e);
@@ -92,6 +124,15 @@ export default function GreenManPage({ token }) {
             };
             // Optional: Adjust voice/pitch/rate here
             window.speechSynthesis.speak(utterance);
+
+            // Start listening immediately for barge-in
+            if (isConversationActiveRef.current) {
+                (async () => {
+                    if (!audioStream) await startAudioStream();
+                    setIsListening(true);
+                    try { recognition.current?.start(); } catch (e) { }
+                })();
+            }
         }
     };
 
@@ -106,7 +147,12 @@ export default function GreenManPage({ token }) {
 
     const startAudioStream = async () => {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true
+                }
+            });
             setAudioStream(stream);
             return true;
         } catch (error) {
@@ -134,10 +180,12 @@ export default function GreenManPage({ token }) {
             }
 
             setIsConversationActive(true);
+            setIsConversationActive(true);
             const streamStarted = await startAudioStream();
             if (streamStarted) {
                 try {
-                    recognition.current?.start();
+                    // Slight delay to prevent immediate self-trigger if noise is present
+                    setTimeout(() => recognition.current?.start(), 100);
                 } catch (e) {
                     console.error("Recognition start error:", e);
                 }
