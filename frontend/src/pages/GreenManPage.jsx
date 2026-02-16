@@ -15,6 +15,13 @@ export default function GreenManPage({ token }) {
     const [loading, setLoading] = useState(false);
     const [audioStream, setAudioStream] = useState(null);
     const messagesEndRef = useRef(null);
+    const audioRef = useRef(null);
+    const [isConversationActive, setIsConversationActive] = useState(false);
+    const isConversationActiveRef = useRef(false);
+
+    useEffect(() => {
+        isConversationActiveRef.current = isConversationActive;
+    }, [isConversationActive]);
 
     // Speech Recognition Setup
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -41,18 +48,30 @@ export default function GreenManPage({ token }) {
         }
         return () => {
             stopAudioStream();
+            if (audioRef.current) {
+                audioRef.current.pause();
+                audioRef.current.currentTime = 0;
+            }
+            window.speechSynthesis.cancel();
         };
     }, []);
 
     const speak = (text, audioBase64 = null) => {
         // Stop any current speech
-        window.speechSynthesis.cancel();
+        stopSpeaking();
 
         if (audioBase64) {
             try {
                 const audio = new Audio(`data:audio/mpeg;base64,${audioBase64}`);
+                audioRef.current = audio;
                 audio.onplay = () => setIsSpeaking(true);
-                audio.onended = () => setIsSpeaking(false);
+                audio.onended = () => {
+                    setIsSpeaking(false);
+                    if (isConversationActiveRef.current) {
+                        setIsListening(true);
+                        recognition.current?.start();
+                    }
+                };
                 audio.play();
                 return;
             } catch (e) {
@@ -64,7 +83,13 @@ export default function GreenManPage({ token }) {
         if ('speechSynthesis' in window) {
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.onstart = () => setIsSpeaking(true);
-            utterance.onend = () => setIsSpeaking(false);
+            utterance.onend = () => {
+                setIsSpeaking(false);
+                if (isConversationActiveRef.current) {
+                    setIsListening(true);
+                    recognition.current?.start();
+                }
+            };
             // Optional: Adjust voice/pitch/rate here
             window.speechSynthesis.speak(utterance);
         }
@@ -72,6 +97,10 @@ export default function GreenManPage({ token }) {
 
     const stopSpeaking = () => {
         window.speechSynthesis.cancel();
+        if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
+        }
         setIsSpeaking(false);
     };
 
@@ -97,10 +126,21 @@ export default function GreenManPage({ token }) {
         if (isListening) {
             recognition.current?.stop();
             stopAudioStream(); // Ensure stream is stopped
+            setIsConversationActive(false);
         } else {
+            // Interrupt if speaking
+            if (isSpeaking) {
+                stopSpeaking();
+            }
+
+            setIsConversationActive(true);
             const streamStarted = await startAudioStream();
             if (streamStarted) {
-                recognition.current?.start();
+                try {
+                    recognition.current?.start();
+                } catch (e) {
+                    console.error("Recognition start error:", e);
+                }
             }
         }
     };
@@ -198,7 +238,7 @@ export default function GreenManPage({ token }) {
             {/* Optional: Stop Speaking Button (Absolute Positioned) */}
             {isSpeaking && (
                 <div className="absolute top-4 right-4 z-20">
-                    <Button variant="outline" size="sm" onClick={stopSpeaking} className="gap-2 text-red-500 border-red-200 bg-white/80 backdrop-blur-sm">
+                    <Button variant="outline" size="sm" onClick={() => { stopSpeaking(); setIsConversationActive(false); }} className="gap-2 text-red-500 border-red-200 bg-white/80 backdrop-blur-sm">
                         <VolumeX size={16} /> Stop Speaking
                     </Button>
                 </div>

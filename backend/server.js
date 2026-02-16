@@ -448,7 +448,7 @@ app.post('/api/chat', authMiddleware, async (req, res) => {
 
         // 1. Gemini Reasoning
         // Using gemini-2.5-flash as requested
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-flash-lite-latest" });
         const chat = model.startChat({
             history: [
                 {
